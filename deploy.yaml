@@ -22,7 +22,6 @@ curseforge:
       - "Java 21"
       - "Java 22"
     environments:
-      - client
       - server
 
 package_as_mod:
