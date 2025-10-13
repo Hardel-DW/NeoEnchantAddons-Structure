@@ -3,11 +3,6 @@ project:
     major: 1
     minor: 1
     patch: 0
-  loaders:
-    - fabric
-    - forge
-    - neoforge
-    - quilt
 
 modrinth:
   enabled: true
@@ -29,6 +24,11 @@ curseforge:
 
 package_as_mod:
   enabled: true
+    loaders:
+    - fabric
+    - forge
+    - neoforge
+    - quilt
   id: mr_nneoenchant_addonsstructure
   name: NE+ Addons - Structure
   authors:
