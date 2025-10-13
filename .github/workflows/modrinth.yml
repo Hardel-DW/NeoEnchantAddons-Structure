@@ -442,6 +442,14 @@ jobs:
             exit 1
           fi
 
+      - name: Debug loaders
+        if: steps.changeset.outputs.found == 'true' && steps.config.outputs.package_as_mod == 'true'
+        run: |
+          echo "Loaders CSV: '${{ steps.loaders.outputs.loaders_csv }}'"
+          echo "Loaders JSON: '${{ steps.loaders.outputs.loaders_json }}'"
+          echo "Parse loaders: '${{ steps.parse.outputs.loaders }}'"
+          echo "Default loaders: '${{ steps.config.outputs.default_loaders }}'"
+
       - name: Upload mod to Modrinth
         if: steps.changeset.outputs.found == 'true' && steps.config.outputs.package_as_mod == 'true'
         run: |
