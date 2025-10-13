@@ -24,7 +24,7 @@ curseforge:
 
 package_as_mod:
   enabled: true
-    loaders:
+  loaders:
     - fabric
     - forge
     - neoforge
