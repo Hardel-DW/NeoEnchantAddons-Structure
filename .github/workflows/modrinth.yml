@@ -214,10 +214,6 @@ jobs:
           print(f"✅ Game versions: {game_versions}")
           EOF
 
-      # ===========================================
-      # BUILD SECTION - À ADAPTER À TON PROJET
-      # ===========================================
-      
       - name: Create build directory
         if: steps.changeset.outputs.found == 'true'
         run: |
@@ -234,6 +230,9 @@ jobs:
           from fnmatch import fnmatch
           
           exclude_patterns = json.loads('${{ steps.config.outputs.exclude_patterns }}')
+          
+          # IMPORTANT: Toujours exclure les dossiers de build pour éviter la récursion infinie
+          exclude_patterns.extend(['build-temp', 'dist'])
           
           def should_exclude(path, exclude_patterns):
               """Vérifie si un fichier/dossier doit être exclu"""
@@ -256,7 +255,7 @@ jobs:
               return False
           
           def copy_with_exclusions(src, dst, exclude_patterns):
-              """Copie récursivement en excluant les patterns"""
+              """Copy recursively excluding patterns"""
               src_path = Path(src)
               dst_path = Path(dst)
               
@@ -264,10 +263,8 @@ jobs:
               excluded_count = 0
               
               for item in src_path.rglob('*'):
-                  # Chemin relatif depuis la source
                   relative_path = item.relative_to(src_path)
                   
-                  # Vérifier si le chemin ou un de ses parents doit être exclu
                   should_skip = False
                   for parent in [relative_path] + list(relative_path.parents):
                       if parent != Path('.') and should_exclude(parent, exclude_patterns):
@@ -278,7 +275,6 @@ jobs:
                       excluded_count += 1
                       continue
                   
-                  # Destination
                   dest_item = dst_path / relative_path
                   
                   if item.is_dir():
@@ -304,12 +300,10 @@ jobs:
           echo "📦 Building datapack..."
           cd build-temp
           
-          # Créer le ZIP du datapack
           zip -r ../dist/datapack.zip . -x "*.git*" "*.DS_Store"
           
           cd ..
           
-          # Vérifier que le ZIP a été créé
           if [ ! -f "dist/datapack.zip" ]; then
             echo "❌ Failed to create datapack.zip"
             exit 1
@@ -317,10 +311,6 @@ jobs:
           
           SIZE=$(du -h dist/datapack.zip | cut -f1)
           echo "✅ Datapack built successfully (${SIZE})"
-
-      # ===========================================
-      # PACKAGE AS MOD
-      # ===========================================
 
       - name: Install converter dependencies
         if: steps.changeset.outputs.found == 'true' && steps.config.outputs.package_as_mod == 'true'
@@ -367,7 +357,7 @@ jobs:
                 id: modId,
                 version: version,
                 name: modName,
-                description: "", // Extrait du pack.mcmeta
+                description: "",
                 authors: modAuthors
               }
             );
