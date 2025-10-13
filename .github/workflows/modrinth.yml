@@ -448,6 +448,11 @@ jobs:
           LOADERS_CSV="${{ steps.loaders.outputs.loaders_csv }}"
           FILENAME="${{ steps.config.outputs.mod_id }}-${{ steps.version.outputs.version }}.jar"
           
+          if [ -z "$LOADERS_CSV" ]; then
+            echo "Error: LOADERS_CSV is empty"
+            exit 1
+          fi
+          
           DATA_JSON=$(jq -n \
             --arg project_id "${{ steps.config.outputs.project_id }}" \
             --arg name "v${{ steps.version.outputs.version }} (Mod)" \
@@ -455,7 +460,7 @@ jobs:
             --arg version_type "${{ steps.parse.outputs.version_type }}" \
             --arg changelog "${{ steps.parse.outputs.changelog }}" \
             --arg game_versions "${{ steps.game_versions.outputs.csv }}" \
-            --arg loaders "$LOADERS_CSV" \
+            --arg loaders_csv "$LOADERS_CSV" \
             '{
               project_id:$project_id,
               name:$name,
@@ -463,7 +468,7 @@ jobs:
               changelog:$changelog,
               version_type:$version_type,
               game_versions:($game_versions | split(",")),
-              loaders:($loaders | split(",")),
+              loaders:($loaders_csv | split(",")),
               dependencies:[],
               featured:false,
               file_parts:["file"],
