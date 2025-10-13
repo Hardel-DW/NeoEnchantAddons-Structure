@@ -15,7 +15,7 @@ curseforge:
   
   mod:
     enabled: true
-    project_id: "ne-addons-structure"
+    project_id: 1300883
     java_versions:
       - "Java 21"
       - "Java 22"
