@@ -1,0 +1,498 @@
+name: Deploy to Modrinth
+
+on:
+  push:
+    paths:
+      - '.changeset/*.md'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          pip install pyyaml
+
+      - name: Detect changeset file
+        id: changeset
+        run: |
+          CHANGESET_FILE=$(find .changeset -name "*.md" -type f | head -n 1)
+          if [ -z "$CHANGESET_FILE" ]; then
+            echo "No changeset found, exiting"
+            echo "found=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "found=true" >> $GITHUB_OUTPUT
+          echo "file=$CHANGESET_FILE" >> $GITHUB_OUTPUT
+          echo "✅ Found changeset: $CHANGESET_FILE"
+
+      - name: Parse changeset
+        id: parse
+        if: steps.changeset.outputs.found == 'true'
+        run: |
+          python - <<'EOF'
+          import re
+          import json
+          import os
+          import yaml
+          
+          changeset_file = "${{ steps.changeset.outputs.file }}"
+          
+          with open(changeset_file, 'r') as f:
+              content = f.read()
+          
+          # Extraire le frontmatter YAML
+          match = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
+          if not match:
+              print("❌ Invalid changeset format")
+              exit(1)
+          
+          frontmatter = yaml.safe_load(match.group(1))
+          changelog = match.group(2).strip()
+          
+          # Extraire les données
+          game_versions = frontmatter.get('game_versions', [])
+          loaders = frontmatter.get('loaders', None)
+          version_type = frontmatter.get('version_type', 'release')
+          version_bump = frontmatter.get('version_bump', 'patch')
+          
+          # Écrire dans GITHUB_OUTPUT
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"game_versions={json.dumps(game_versions)}\n")
+              f.write(f"loaders={json.dumps(loaders) if loaders else 'null'}\n")
+              f.write(f"version_type={version_type}\n")
+              f.write(f"version_bump={version_bump}\n")
+              f.write(f"changelog<<EOF\n{changelog}\nEOF\n")
+          
+          print(f"✅ Parsed changeset:")
+          print(f"  - Game versions: {game_versions}")
+          print(f"  - Loaders: {loaders}")
+          print(f"  - Version type: {version_type}")
+          print(f"  - Version bump: {version_bump}")
+          EOF
+
+      - name: Read deploy config
+        id: config
+        if: steps.changeset.outputs.found == 'true'
+        run: |
+          python - <<'EOF'
+          import yaml
+          import json
+          import os
+          
+          with open('deploy.yaml', 'r') as f:
+              config = yaml.safe_load(f)
+          
+          # Extraire les configurations
+          project_id = config['modrinth']['project_id']
+          default_loaders = config['modrinth']['loaders']
+          package_as_mod = config['modrinth'].get('package_as_mod', False)
+          
+          mod_id = config['mod']['id']
+          mod_name = config['mod'].get('name', None)
+          mod_authors = config['mod']['authors']
+          
+          version = config['version']
+          
+          # Extraire les exclusions
+          exclude_patterns = config.get('build', {}).get('exclude', [])
+          
+          # Écrire dans GITHUB_OUTPUT
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"project_id={project_id}\n")
+              f.write(f"default_loaders={json.dumps(default_loaders)}\n")
+              f.write(f"package_as_mod={str(package_as_mod).lower()}\n")
+              f.write(f"mod_id={mod_id}\n")
+              f.write(f"mod_name={mod_name or ''}\n")
+              f.write(f"mod_authors={json.dumps(mod_authors)}\n")
+              f.write(f"current_version={version['major']}.{version['minor']}.{version['patch']}\n")
+              f.write(f"version_major={version['major']}\n")
+              f.write(f"version_minor={version['minor']}\n")
+              f.write(f"version_patch={version['patch']}\n")
+              f.write(f"exclude_patterns={json.dumps(exclude_patterns)}\n")
+          
+          print(f"✅ Read config:")
+          print(f"  - Project ID: {project_id}")
+          print(f"  - Package as mod: {package_as_mod}")
+          print(f"  - Current version: {version['major']}.{version['minor']}.{version['patch']}")
+          print(f"  - Exclude patterns: {len(exclude_patterns)} patterns")
+          EOF
+
+      - name: Increment version
+        id: version
+        if: steps.changeset.outputs.found == 'true'
+        run: |
+          python - <<'EOF'
+          import os
+          
+          bump = "${{ steps.parse.outputs.version_bump }}"
+          major = int("${{ steps.config.outputs.version_major }}")
+          minor = int("${{ steps.config.outputs.version_minor }}")
+          patch = int("${{ steps.config.outputs.version_patch }}")
+          
+          if bump == "major":
+              major += 1
+              minor = 0
+              patch = 0
+          elif bump == "minor":
+              minor += 1
+              patch = 0
+          elif bump == "patch":
+              patch += 1
+          else:
+              print(f"❌ Invalid version bump: {bump}")
+              exit(1)
+          
+          new_version = f"{major}.{minor}.{patch}"
+          
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"version={new_version}\n")
+              f.write(f"major={major}\n")
+              f.write(f"minor={minor}\n")
+              f.write(f"patch={patch}\n")
+          
+          print(f"✅ Version bumped: ${{ steps.config.outputs.current_version }} -> {new_version}")
+          EOF
+
+      - name: Resolve loaders
+        id: loaders
+        if: steps.changeset.outputs.found == 'true'
+        run: |
+          python - <<'EOF'
+          import json
+          import os
+          
+          changeset_loaders = '${{ steps.parse.outputs.loaders }}'
+          default_loaders = '${{ steps.config.outputs.default_loaders }}'
+          
+          if changeset_loaders != 'null':
+              loaders = json.loads(changeset_loaders)
+          else:
+              loaders = json.loads(default_loaders)
+          
+          # Convertir en format comma-separated pour Modrinth
+          loaders_csv = ','.join(loaders)
+          
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"loaders={loaders_csv}\n")
+              f.write(f"loaders_json={json.dumps(loaders)}\n")
+          
+          print(f"✅ Resolved loaders: {loaders}")
+          EOF
+
+      - name: Format game versions
+        id: game_versions
+        if: steps.changeset.outputs.found == 'true'
+        run: |
+          python - <<'EOF'
+          import json
+          import os
+          
+          game_versions = json.loads('${{ steps.parse.outputs.game_versions }}')
+          game_versions_csv = ','.join(game_versions)
+          
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"csv={game_versions_csv}\n")
+          
+          print(f"✅ Game versions: {game_versions}")
+          EOF
+
+      # ===========================================
+      # BUILD SECTION - À ADAPTER À TON PROJET
+      # ===========================================
+      
+      - name: Create build directory
+        if: steps.changeset.outputs.found == 'true'
+        run: |
+          mkdir -p dist build-temp
+
+      - name: Copy files with exclusions
+        if: steps.changeset.outputs.found == 'true'
+        run: |
+          python - <<'EOF'
+          import os
+          import shutil
+          import json
+          from pathlib import Path
+          from fnmatch import fnmatch
+          
+          exclude_patterns = json.loads('${{ steps.config.outputs.exclude_patterns }}')
+          
+          def should_exclude(path, exclude_patterns):
+              """Vérifie si un fichier/dossier doit être exclu"""
+              path_str = str(path)
+              path_name = path.name
+              
+              for pattern in exclude_patterns:
+                  # Pattern exact (dossier ou fichier)
+                  if path_name == pattern or path_str == pattern:
+                      return True
+                  
+                  # Pattern glob
+                  if fnmatch(path_name, pattern):
+                      return True
+                  
+                  # Pattern dans le chemin
+                  if fnmatch(path_str, pattern) or fnmatch(path_str, f"*/{pattern}") or fnmatch(path_str, f"*/{pattern}/*"):
+                      return True
+              
+              return False
+          
+          def copy_with_exclusions(src, dst, exclude_patterns):
+              """Copie récursivement en excluant les patterns"""
+              src_path = Path(src)
+              dst_path = Path(dst)
+              
+              copied_count = 0
+              excluded_count = 0
+              
+              for item in src_path.rglob('*'):
+                  # Chemin relatif depuis la source
+                  relative_path = item.relative_to(src_path)
+                  
+                  # Vérifier si le chemin ou un de ses parents doit être exclu
+                  should_skip = False
+                  for parent in [relative_path] + list(relative_path.parents):
+                      if parent != Path('.') and should_exclude(parent, exclude_patterns):
+                          should_skip = True
+                          break
+                  
+                  if should_skip:
+                      excluded_count += 1
+                      continue
+                  
+                  # Destination
+                  dest_item = dst_path / relative_path
+                  
+                  if item.is_dir():
+                      dest_item.mkdir(parents=True, exist_ok=True)
+                  else:
+                      dest_item.parent.mkdir(parents=True, exist_ok=True)
+                      shutil.copy2(item, dest_item)
+                      copied_count += 1
+              
+              return copied_count, excluded_count
+          
+          # Copier les fichiers en excluant les patterns
+          copied, excluded = copy_with_exclusions('.', 'build-temp', exclude_patterns)
+          
+          print(f"✅ Files copied: {copied}")
+          print(f"⛔ Files/folders excluded: {excluded}")
+          print(f"📋 Exclusion patterns applied: {len(exclude_patterns)}")
+          EOF
+
+      - name: Build datapack
+        if: steps.changeset.outputs.found == 'true'
+        run: |
+          echo "📦 Building datapack..."
+          cd build-temp
+          
+          # Créer le ZIP du datapack
+          zip -r ../dist/datapack.zip . -x "*.git*" "*.DS_Store"
+          
+          cd ..
+          
+          # Vérifier que le ZIP a été créé
+          if [ ! -f "dist/datapack.zip" ]; then
+            echo "❌ Failed to create datapack.zip"
+            exit 1
+          fi
+          
+          SIZE=$(du -h dist/datapack.zip | cut -f1)
+          echo "✅ Datapack built successfully (${SIZE})"
+
+      # ===========================================
+      # PACKAGE AS MOD
+      # ===========================================
+
+      - name: Install converter dependencies
+        if: steps.changeset.outputs.found == 'true' && steps.config.outputs.package_as_mod == 'true'
+        run: |
+          npm install @voxelio/converter @voxelio/breeze @voxelio/zip yaml
+
+      - name: Create package-as-mod script
+        if: steps.changeset.outputs.found == 'true' && steps.config.outputs.package_as_mod == 'true'
+        run: |
+          cat > package-as-mod.js <<'SCRIPT'
+          import { convertDatapack, ModPlatforms } from "@voxelio/converter";
+          import { readFile, writeFile } from "fs/promises";
+          
+          async function packageAsMod(
+            datapackPath,
+            outputPath,
+            modId,
+            modName,
+            modAuthors,
+            version,
+            loaders
+          ) {
+            console.log("📦 Packaging datapack as mod...");
+            
+            const datapackBuffer = await readFile(datapackPath);
+            const datapackFile = new File([datapackBuffer], "datapack.zip");
+            
+            const platforms = loaders
+              .map(loader => {
+                const loaderUpper = loader.toUpperCase();
+                return ModPlatforms[loaderUpper];
+              })
+              .filter(Boolean);
+            
+            console.log(`  - Platforms: ${platforms.join(", ")}`);
+            console.log(`  - Version: ${version}`);
+            console.log(`  - Mod ID: ${modId}`);
+            console.log(`  - Mod Name: ${modName}`);
+            
+            const modResponse = await convertDatapack(
+              datapackFile,
+              platforms,
+              {
+                id: modId,
+                version: version,
+                name: modName,
+                description: "", // Extrait du pack.mcmeta
+                authors: modAuthors
+              }
+            );
+            
+            const modBuffer = await modResponse.arrayBuffer();
+            await writeFile(outputPath, Buffer.from(modBuffer));
+            
+            console.log("✅ Mod packaged successfully!");
+          }
+          
+          const args = JSON.parse(process.argv[2]);
+          await packageAsMod(
+            args.datapackPath,
+            args.outputPath,
+            args.modId,
+            args.modName,
+            args.modAuthors,
+            args.version,
+            args.loaders
+          );
+          SCRIPT
+
+      - name: Package as mod
+        if: steps.changeset.outputs.found == 'true' && steps.config.outputs.package_as_mod == 'true'
+        run: |
+          MOD_NAME="${{ steps.config.outputs.mod_name }}"
+          if [ -z "$MOD_NAME" ]; then
+            MOD_NAME="${{ github.event.repository.name }}"
+          fi
+          
+          node package-as-mod.js "$(cat <<EOF
+          {
+            "datapackPath": "dist/datapack.zip",
+            "outputPath": "dist/${{ steps.config.outputs.mod_id }}-${{ steps.version.outputs.version }}.jar",
+            "modId": "${{ steps.config.outputs.mod_id }}",
+            "modName": "$MOD_NAME",
+            "modAuthors": ${{ steps.config.outputs.mod_authors }},
+            "version": "${{ steps.version.outputs.version }}",
+            "loaders": ${{ steps.loaders.outputs.loaders_json }}
+          }
+          EOF
+          )"
+
+      - name: Upload datapack to Modrinth
+        if: steps.changeset.outputs.found == 'true'
+        uses: Kir-Antipov/mc-publish@v3.3
+        with:
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          modrinth-id: ${{ steps.config.outputs.project_id }}
+          
+          files: dist/datapack.zip
+          
+          name: "v${{ steps.version.outputs.version }} (Datapack)"
+          version: ${{ steps.version.outputs.version }}
+          version-type: ${{ steps.parse.outputs.version_type }}
+          
+          changelog: ${{ steps.parse.outputs.changelog }}
+          
+          loaders: ${{ steps.loaders.outputs.loaders_csv }}
+          game-versions: ${{ steps.game_versions.outputs.csv }}
+
+      - name: Upload mod to Modrinth
+        if: steps.changeset.outputs.found == 'true' && steps.config.outputs.package_as_mod == 'true'
+        uses: Kir-Antipov/mc-publish@v3.3
+        with:
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          modrinth-id: ${{ steps.config.outputs.project_id }}
+          
+          files: dist/${{ steps.config.outputs.mod_id }}-${{ steps.version.outputs.version }}.jar
+          
+          name: "v${{ steps.version.outputs.version }} (Mod)"
+          version: ${{ steps.version.outputs.version }}
+          version-type: ${{ steps.parse.outputs.version_type }}
+          
+          changelog: ${{ steps.parse.outputs.changelog }}
+          
+          loaders: ${{ steps.loaders.outputs.loaders_csv }}
+          game-versions: ${{ steps.game_versions.outputs.csv }}
+
+      - name: Update version in deploy.yaml
+        if: steps.changeset.outputs.found == 'true'
+        run: |
+          python - <<'EOF'
+          import yaml
+          
+          with open('deploy.yaml', 'r') as f:
+              config = yaml.safe_load(f)
+          
+          config['version']['major'] = int("${{ steps.version.outputs.major }}")
+          config['version']['minor'] = int("${{ steps.version.outputs.minor }}")
+          config['version']['patch'] = int("${{ steps.version.outputs.patch }}")
+          
+          with open('deploy.yaml', 'w') as f:
+              yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+          
+          print(f"✅ Updated deploy.yaml to version ${{ steps.version.outputs.version }}")
+          EOF
+
+      - name: Remove changeset file
+        if: steps.changeset.outputs.found == 'true'
+        run: |
+          rm ${{ steps.changeset.outputs.file }}
+          echo "✅ Removed changeset file"
+
+      - name: Commit and push changes
+        if: steps.changeset.outputs.found == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add deploy.yaml
+          git add .changeset
+          git commit -m "chore: release v${{ steps.version.outputs.version }}"
+          git push
+          echo "✅ Changes committed and pushed"
+
+      - name: Summary
+        if: steps.changeset.outputs.found == 'true'
+        run: |
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Type**: ${{ steps.parse.outputs.version_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Game Versions**: ${{ steps.game_versions.outputs.csv }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Loaders**: ${{ steps.loaders.outputs.loaders_csv }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Package as Mod**: ${{ steps.config.outputs.package_as_mod }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Changelog" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.parse.outputs.changelog }}" >> $GITHUB_STEP_SUMMARY
