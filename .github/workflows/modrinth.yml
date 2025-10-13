@@ -83,6 +83,7 @@ jobs:
               f.write(f"version_patch={config['project']['version']['patch']}\n")
               f.write(f"modrinth_enabled={str(config['modrinth']['enabled']).lower()}\n")
               f.write(f"modrinth_project_id={config['modrinth']['project_id']}\n")
+              f.write(f"modrinth_featured={str(config['modrinth'].get('featured', False)).lower()}\n")
               f.write(f"curseforge_datapack_enabled={str(config['curseforge']['datapack']['enabled']).lower()}\n")
               f.write(f"curseforge_datapack_id={config['curseforge']['datapack'].get('project_id', '')}\n")
               f.write(f"curseforge_mod_enabled={str(config['curseforge']['mod']['enabled']).lower()}\n")
@@ -300,7 +301,8 @@ jobs:
             --arg type "${{ steps.parse.outputs.version_type }}" \
             --arg log "${{ steps.parse.outputs.changelog }}" \
             --arg gv "${{ steps.game_versions.outputs.csv }}" \
-            '{project_id:$pid, name:$name, version_number:$ver, changelog:$log, version_type:$type, game_versions:($gv|split(",")), loaders:["datapack"], dependencies:[], file_parts:["file"], primary_file:"file"}')
+            --argjson featured ${{ steps.config.outputs.modrinth_featured || 'false' }} \
+            '{name:$name, version_number:$number, changelog:$changelog, game_versions:$gv, loaders:$loaders, project_id:$project, version_type:$type, featured:$featured, file_parts:["file"], primary_file:"file"}'
           
           curl -sS -o resp.json -w "%{http_code}" \
             -X POST "https://api.modrinth.com/v2/version" \
@@ -325,8 +327,9 @@ jobs:
             --arg log "${{ steps.parse.outputs.changelog }}" \
             --arg gv "${{ steps.game_versions.outputs.csv }}" \
             --arg ld "${{ steps.loaders.outputs.csv }}" \
-            '{project_id:$pid, name:$name, version_number:$ver, changelog:$log, version_type:$type, game_versions:($gv|split(",")), loaders:($ld|split(",")), dependencies:[], file_parts:["file"], primary_file:"file"}')
-          
+            --argjson featured ${{ steps.config.outputs.modrinth_featured || 'false' }} \
+            '{name:$name, version_number:$number, changelog:$changelog, game_versions:$gv, loaders:$loaders, project_id:$project, version_type:$type, featured:$featured, file_parts:["file"], primary_file:"file"}'
+            
           curl -sS -o resp.json -w "%{http_code}" \
             -X POST "https://api.modrinth.com/v2/version" \
             -H "Authorization: ${{ secrets.MODRINTH_TOKEN }}" \
