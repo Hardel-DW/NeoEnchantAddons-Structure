@@ -243,33 +243,49 @@ jobs:
         id: cf_versions
         if: steps.changeset.outputs.found == 'true' && (steps.config.outputs.curseforge_datapack_enabled == 'true' || steps.config.outputs.curseforge_mod_enabled == 'true')
         run: |
-          curl -sS "https://minecraft.curseforge.com/api/game/versions" \
-            -H "X-Api-Token: ${{ secrets.CURSEFORGE_TOKEN }}" > cf_versions.json
-          
+          curl -fsSL -D headers.txt "https://minecraft.curseforge.com/api/game/versions" \
+            -H "Accept: application/json" \
+            -H "X-Api-Token: ${{ secrets.CURSEFORGE_TOKEN }}" \
+            -o cf_versions.json
+
+          if ! jq -e 'type=="array" and (.[0]? | has("id") and has("name"))' cf_versions.json > /dev/null; then
+            echo "Unexpected response from CurseForge. First 200 chars below:"
+            head -c 200 cf_versions.json || true
+            echo; echo "Response headers:"
+            cat headers.txt || true
+            exit 1
+          fi
+
           python - <<'EOF'
           import json, os
-          
-          with open('cf_versions.json', 'r') as f:
-              versions = json.load(f)
-          
-          game_versions = json.loads('${{ steps.game_versions.outputs.json }}')
-          loaders = json.loads('${{ steps.loaders.outputs.json }}')
+          with open('cf_versions.json','r') as f:
+              versions = json.load(f)  # <-- ici c'est bien une liste d'objets
+          # inputs précédents
+          game_versions = json.loads(os.environ.get('GAME_VERSIONS_JSON','[]'))  # ex. ["1.21.1"]
+          loaders       = json.loads(os.environ.get('LOADERS_JSON','[]'))        # ex. ["fabric","neoforge"]
           java_versions = json.loads('${{ steps.config.outputs.curseforge_java_versions }}')
-          environments = json.loads('${{ steps.config.outputs.curseforge_environments }}')
-          
-          game_ids = [v['id'] for v in versions if v['name'] in game_versions]
-          loader_ids = [v['id'] for v in versions if v['name'] in [l.capitalize() for l in loaders]]
-          java_ids = [v['id'] for v in versions if v['name'] in java_versions]
-          env_names = [e.capitalize() for e in environments]
-          env_ids = [v['id'] for v in versions if v['name'] in env_names]
-          
-          all_ids = game_ids + loader_ids + java_ids
-          all_ids = game_ids + loader_ids + java_ids + env_ids
-          
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f"ids={json.dumps(all_ids)}\n")
-              f.write(f"game_ids={json.dumps(game_ids)}\n")
-              f.write(f"env_ids={json.dumps(env_ids)}\n")
+          environments  = json.loads('${{ steps.config.outputs.curseforge_environments }}')
+
+          # Normalisation pour matcher les 'name' côté CF
+          loader_names = [l.capitalize() for l in loaders]
+          env_names    = [e.capitalize() for e in environments]  # "server" -> "Server"
+
+          ids = []
+          by_name = {v['name']: v['id'] for v in versions if isinstance(v, dict) and 'name' in v and 'id' in v}
+          for name in game_versions: 
+              if name in by_name: ids.append(by_name[name])
+          for name in loader_names:
+              if name in by_name: ids.append(by_name[name])
+          for name in java_versions:
+              if name in by_name: ids.append(by_name[name])
+          for name in env_names:
+              if name in by_name: ids.append(by_name[name])
+
+          # Dédup
+          ids = list(dict.fromkeys(ids))
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              out.write(f"ids={json.dumps(ids)}\n")
           EOF
 
       - name: Upload to Modrinth (Datapack)
