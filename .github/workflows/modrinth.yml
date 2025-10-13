@@ -402,6 +402,8 @@ jobs:
       - name: Upload datapack to Modrinth
         if: steps.changeset.outputs.found == 'true'
         run: |
+          FILENAME="${{ steps.config.outputs.mod_id }}-${{ steps.version.outputs.version }}.zip"
+          
           DATA_JSON=$(jq -n \
             --arg project_id "${{ steps.config.outputs.project_id }}" \
             --arg name "v${{ steps.version.outputs.version }} (Datapack)" \
@@ -431,7 +433,7 @@ jobs:
             -H "Authorization: ${{ secrets.MODRINTH_TOKEN }}" \
             -H "User-Agent: ${{ github.repository }} CI" \
             -F "data=${DATA_JSON};type=application/json" \
-            -F "file=@dist/datapack.zip;type=application/zip")
+            -F "file=@dist/datapack.zip;type=application/zip;filename=${FILENAME}")
           
           echo "HTTP $code"
           cat datapack_response.json | jq . || cat datapack_response.json
@@ -443,22 +445,25 @@ jobs:
       - name: Upload mod to Modrinth
         if: steps.changeset.outputs.found == 'true' && steps.config.outputs.package_as_mod == 'true'
         run: |
+          LOADERS_CSV="${{ steps.loaders.outputs.loaders_csv }}"
+          FILENAME="${{ steps.config.outputs.mod_id }}-${{ steps.version.outputs.version }}.jar"
+          
           DATA_JSON=$(jq -n \
             --arg project_id "${{ steps.config.outputs.project_id }}" \
             --arg name "v${{ steps.version.outputs.version }} (Mod)" \
             --arg version_number "${{ steps.version.outputs.version }}" \
             --arg version_type "${{ steps.parse.outputs.version_type }}" \
             --arg changelog "${{ steps.parse.outputs.changelog }}" \
-            --argjson game_versions '["${{ steps.game_versions.outputs.csv }}"]' \
-            --argjson loaders '["${{ steps.loaders.outputs.loaders_csv }}"]' \
+            --arg game_versions "${{ steps.game_versions.outputs.csv }}" \
+            --arg loaders "$LOADERS_CSV" \
             '{
               project_id:$project_id,
               name:$name,
               version_number:$version_number,
               changelog:$changelog,
               version_type:$version_type,
-              game_versions:($game_versions[0] | split(",")),
-              loaders:($loaders[0] | split(",")),
+              game_versions:($game_versions | split(",")),
+              loaders:($loaders | split(",")),
               dependencies:[],
               featured:false,
               file_parts:["file"],
@@ -472,7 +477,7 @@ jobs:
             -H "Authorization: ${{ secrets.MODRINTH_TOKEN }}" \
             -H "User-Agent: ${{ github.repository }} CI" \
             -F "data=${DATA_JSON};type=application/json" \
-            -F "file=@dist/${{ steps.config.outputs.mod_id }}-${{ steps.version.outputs.version }}.jar;type=application/java-archive")
+            -F "file=@dist/${FILENAME};type=application/java-archive;filename=${FILENAME}")
           
           echo "HTTP $code"
           cat mod_response.json | jq . || cat mod_response.json
