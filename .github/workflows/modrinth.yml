@@ -1,4 +1,4 @@
-name: Deploy to Modrinth
+name: Deploy
 
 on:
   push:
@@ -12,7 +12,7 @@ jobs:
       contents: write
       
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -28,113 +28,73 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Python dependencies
-        run: |
-          pip install pyyaml
+      - name: Install dependencies
+        run: pip install pyyaml
 
-      - name: Detect changeset file
+      - name: Detect changeset
         id: changeset
         run: |
           CHANGESET_FILE=$(find .changeset -name "*.md" -type f | head -n 1)
           if [ -z "$CHANGESET_FILE" ]; then
-            echo "No changeset found, exiting"
             echo "found=false" >> $GITHUB_OUTPUT
             exit 0
           fi
           echo "found=true" >> $GITHUB_OUTPUT
           echo "file=$CHANGESET_FILE" >> $GITHUB_OUTPUT
-          echo "✅ Found changeset: $CHANGESET_FILE"
 
       - name: Parse changeset
         id: parse
         if: steps.changeset.outputs.found == 'true'
         run: |
           python - <<'EOF'
-          import re
-          import json
-          import os
-          import yaml
+          import re, json, os, yaml
           
-          changeset_file = "${{ steps.changeset.outputs.file }}"
-          
-          with open(changeset_file, 'r') as f:
+          with open("${{ steps.changeset.outputs.file }}", 'r') as f:
               content = f.read()
           
-          # Extraire le frontmatter YAML
           match = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
           if not match:
-              print("❌ Invalid changeset format")
               exit(1)
           
           frontmatter = yaml.safe_load(match.group(1))
           changelog = match.group(2).strip()
           
-          # Extraire les données
-          game_versions = frontmatter.get('game_versions', [])
-          loaders = frontmatter.get('loaders', None)
-          version_type = frontmatter.get('version_type', 'release')
-          version_bump = frontmatter.get('version_bump', 'patch')
-          
-          # Écrire dans GITHUB_OUTPUT
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f"game_versions={json.dumps(game_versions)}\n")
-              f.write(f"loaders={json.dumps(loaders) if loaders else 'null'}\n")
-              f.write(f"version_type={version_type}\n")
-              f.write(f"version_bump={version_bump}\n")
+              f.write(f"game_versions={json.dumps(frontmatter.get('game_versions', []))}\n")
+              f.write(f"loaders={json.dumps(frontmatter.get('loaders', None)) if frontmatter.get('loaders') else 'null'}\n")
+              f.write(f"version_type={frontmatter.get('version_type', 'release')}\n")
+              f.write(f"version_bump={frontmatter.get('version_bump', 'patch')}\n")
               f.write(f"changelog<<EOF\n{changelog}\nEOF\n")
-          
-          print(f"✅ Parsed changeset:")
-          print(f"  - Game versions: {game_versions}")
-          print(f"  - Loaders: {loaders}")
-          print(f"  - Version type: {version_type}")
-          print(f"  - Version bump: {version_bump}")
           EOF
 
-      - name: Read deploy config
+      - name: Read config
         id: config
         if: steps.changeset.outputs.found == 'true'
         run: |
           python - <<'EOF'
-          import yaml
-          import json
-          import os
+          import yaml, json, os
           
           with open('deploy.yaml', 'r') as f:
               config = yaml.safe_load(f)
           
-          # Extraire les configurations
-          project_id = config['modrinth']['project_id']
-          default_loaders = config['modrinth']['loaders']
-          package_as_mod = config['modrinth'].get('package_as_mod', False)
-          
-          mod_id = config['mod']['id']
-          mod_name = config['mod'].get('name', None)
-          mod_authors = config['mod']['authors']
-          
-          version = config['version']
-          
-          # Extraire les exclusions
-          exclude_patterns = config.get('build', {}).get('exclude', [])
-          
-          # Écrire dans GITHUB_OUTPUT
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f"project_id={project_id}\n")
-              f.write(f"default_loaders={json.dumps(default_loaders)}\n")
-              f.write(f"package_as_mod={str(package_as_mod).lower()}\n")
-              f.write(f"mod_id={mod_id}\n")
-              f.write(f"mod_name={mod_name or ''}\n")
-              f.write(f"mod_authors={json.dumps(mod_authors)}\n")
-              f.write(f"current_version={version['major']}.{version['minor']}.{version['patch']}\n")
-              f.write(f"version_major={version['major']}\n")
-              f.write(f"version_minor={version['minor']}\n")
-              f.write(f"version_patch={version['patch']}\n")
-              f.write(f"exclude_patterns={json.dumps(exclude_patterns)}\n")
-          
-          print(f"✅ Read config:")
-          print(f"  - Project ID: {project_id}")
-          print(f"  - Package as mod: {package_as_mod}")
-          print(f"  - Current version: {version['major']}.{version['minor']}.{version['patch']}")
-          print(f"  - Exclude patterns: {len(exclude_patterns)} patterns")
+              f.write(f"version_major={config['project']['version']['major']}\n")
+              f.write(f"version_minor={config['project']['version']['minor']}\n")
+              f.write(f"version_patch={config['project']['version']['patch']}\n")
+              f.write(f"modrinth_enabled={str(config['modrinth']['enabled']).lower()}\n")
+              f.write(f"modrinth_project_id={config['modrinth']['project_id']}\n")
+              f.write(f"curseforge_datapack_enabled={str(config['curseforge']['datapack']['enabled']).lower()}\n")
+              f.write(f"curseforge_datapack_id={config['curseforge']['datapack'].get('project_id', '')}\n")
+              f.write(f"curseforge_mod_enabled={str(config['curseforge']['mod']['enabled']).lower()}\n")
+              f.write(f"curseforge_mod_id={config['curseforge']['mod'].get('project_id', '')}\n")
+              f.write(f"curseforge_java_versions={json.dumps(config['curseforge']['mod'].get('java_versions', []))}\n")
+              f.write(f"curseforge_environments={json.dumps(config['curseforge']['mod'].get('environments', []))}\n")
+              f.write(f"package_as_mod_enabled={str(config['package_as_mod']['enabled']).lower()}\n")
+              f.write(f"package_as_mod_loaders={json.dumps(config['package_as_mod']['loaders'])}\n")
+              f.write(f"package_as_mod_id={config['package_as_mod']['id']}\n")
+              f.write(f"package_as_mod_name={config['package_as_mod'].get('name', '')}\n")
+              f.write(f"package_as_mod_authors={json.dumps(config['package_as_mod']['authors'])}\n")
+              f.write(f"exclude_patterns={json.dumps(config.get('build', {}).get('exclude', []))}\n")
           EOF
 
       - name: Increment version
@@ -158,45 +118,32 @@ jobs:
               patch = 0
           elif bump == "patch":
               patch += 1
-          else:
-              print(f"❌ Invalid version bump: {bump}")
-              exit(1)
-          
-          new_version = f"{major}.{minor}.{patch}"
           
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f"version={new_version}\n")
+              f.write(f"version={major}.{minor}.{patch}\n")
               f.write(f"major={major}\n")
               f.write(f"minor={minor}\n")
               f.write(f"patch={patch}\n")
-          
-          print(f"✅ Version bumped: ${{ steps.config.outputs.current_version }} -> {new_version}")
           EOF
-          
+
       - name: Resolve loaders
         id: loaders
         if: steps.changeset.outputs.found == 'true'
         run: |
           python - <<'EOF'
-          import json
-          import os
+          import json, os
           
           changeset_loaders = '${{ steps.parse.outputs.loaders }}'
-          default_loaders = '${{ steps.config.outputs.default_loaders }}'
+          default_loaders = '${{ steps.config.outputs.package_as_mod_loaders }}'
           
           if changeset_loaders != 'null':
-              loaders = json.loads(changeset_loaders.replace("'", '"'))
+              loaders = json.loads(changeset_loaders)
           else:
-              loaders = json.loads(default_loaders.replace("'", '"'))
-          
-          loaders_csv = ','.join(loaders)
+              loaders = json.loads(default_loaders)
           
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f"loaders={loaders_csv}\n")
-              f.write(f"loaders_json={json.dumps(loaders)}\n")
-          
-          print(f"Resolved loaders: {loaders}")
-          print(f"Loaders CSV: {loaders_csv}")
+              f.write(f"csv={','.join(loaders)}\n")
+              f.write(f"json={json.dumps(loaders)}\n")
           EOF
 
       - name: Format game versions
@@ -204,297 +151,221 @@ jobs:
         if: steps.changeset.outputs.found == 'true'
         run: |
           python - <<'EOF'
-          import json
-          import os
+          import json, os
           
           game_versions = json.loads('${{ steps.parse.outputs.game_versions }}')
-          game_versions_csv = ','.join(game_versions)
           
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f"csv={game_versions_csv}\n")
-          
-          print(f"✅ Game versions: {game_versions}")
+              f.write(f"csv={','.join(game_versions)}\n")
+              f.write(f"json={json.dumps(game_versions)}\n")
           EOF
 
-      - name: Create build directory
+      - name: Create directories
         if: steps.changeset.outputs.found == 'true'
-        run: |
-          mkdir -p dist build-temp
+        run: mkdir -p dist build-temp
 
-      - name: Copy files with exclusions
+      - name: Copy files
         if: steps.changeset.outputs.found == 'true'
         run: |
           python - <<'EOF'
-          import os
-          import shutil
-          import json
+          import shutil, json
           from pathlib import Path
           from fnmatch import fnmatch
           
-          exclude_patterns = json.loads('${{ steps.config.outputs.exclude_patterns }}')
-          exclude_patterns.extend(['build-temp', 'dist'])
+          exclude = json.loads('${{ steps.config.outputs.exclude_patterns }}') + ['build-temp', 'dist']
           
-          def should_exclude(path, exclude_patterns):
-              """Vérifie si un fichier/dossier doit être exclu"""
-              path_str = str(path)
-              path_name = path.name
-              
-              for pattern in exclude_patterns:
-                  # Pattern exact (dossier ou fichier)
-                  if path_name == pattern or path_str == pattern:
+          def should_exclude(path):
+              for pattern in exclude:
+                  if fnmatch(str(path.name), pattern) or any(fnmatch(str(p), pattern) for p in path.parents):
                       return True
-                  
-                  # Pattern glob
-                  if fnmatch(path_name, pattern):
-                      return True
-                  
-                  # Pattern dans le chemin
-                  if fnmatch(path_str, pattern) or fnmatch(path_str, f"*/{pattern}") or fnmatch(path_str, f"*/{pattern}/*"):
-                      return True
-              
               return False
           
-          def copy_with_exclusions(src, dst, exclude_patterns):
-              """Copy recursively excluding patterns"""
-              src_path = Path(src)
-              dst_path = Path(dst)
-              
-              copied_count = 0
-              excluded_count = 0
-              
-              for item in src_path.rglob('*'):
-                  relative_path = item.relative_to(src_path)
-                  
-                  should_skip = False
-                  for parent in [relative_path] + list(relative_path.parents):
-                      if parent != Path('.') and should_exclude(parent, exclude_patterns):
-                          should_skip = True
-                          break
-                  
-                  if should_skip:
-                      excluded_count += 1
-                      continue
-                  
-                  dest_item = dst_path / relative_path
-                  
+          src, dst = Path('.'), Path('build-temp')
+          for item in src.rglob('*'):
+              rel = item.relative_to(src)
+              if not should_exclude(rel):
+                  dest = dst / rel
                   if item.is_dir():
-                      dest_item.mkdir(parents=True, exist_ok=True)
+                      dest.mkdir(parents=True, exist_ok=True)
                   else:
-                      dest_item.parent.mkdir(parents=True, exist_ok=True)
-                      shutil.copy2(item, dest_item)
-                      copied_count += 1
-              
-              return copied_count, excluded_count
-          
-          # Copier les fichiers en excluant les patterns
-          copied, excluded = copy_with_exclusions('.', 'build-temp', exclude_patterns)
-          
-          print(f"✅ Files copied: {copied}")
-          print(f"⛔ Files/folders excluded: {excluded}")
-          print(f"📋 Exclusion patterns applied: {len(exclude_patterns)}")
+                      dest.parent.mkdir(parents=True, exist_ok=True)
+                      shutil.copy2(item, dest)
           EOF
 
       - name: Build datapack
         if: steps.changeset.outputs.found == 'true'
         run: |
-          echo "📦 Building datapack..."
           cd build-temp
-          
-          zip -r ../dist/datapack.zip . -x "*.git*" "*.DS_Store"
-          
+          FILENAME="${{ steps.config.outputs.package_as_mod_id }}-${{ steps.version.outputs.version }}.zip"
+          zip -r ../dist/${FILENAME} . -x "*.git*" "*.DS_Store"
           cd ..
-          
-          if [ ! -f "dist/datapack.zip" ]; then
-            echo "❌ Failed to create datapack.zip"
-            exit 1
-          fi
-          
-          SIZE=$(du -h dist/datapack.zip | cut -f1)
-          echo "✅ Datapack built successfully (${SIZE})"
+          [ -f "dist/${FILENAME}" ] || exit 1
 
-      - name: Install converter dependencies
-        if: steps.changeset.outputs.found == 'true' && steps.config.outputs.package_as_mod == 'true'
+      - name: Package as mod
+        if: steps.changeset.outputs.found == 'true' && steps.config.outputs.package_as_mod_enabled == 'true'
         run: |
-          npm install @voxelio/converter @voxelio/breeze @voxelio/zip yaml
-
-      - name: Create package-as-mod script
-        if: steps.changeset.outputs.found == 'true' && steps.config.outputs.package_as_mod == 'true'
-        run: |
-          cat > package-as-mod.js <<'SCRIPT'
+          npm install @voxelio/converter @voxelio/breeze @voxelio/zip
+          
+          cat > convert.js <<'SCRIPT'
           import { convertDatapack, ModPlatforms } from "@voxelio/converter";
           import { readFile, writeFile } from "fs/promises";
           
-          async function packageAsMod(
-            datapackPath,
-            outputPath,
-            modId,
-            modName,
-            modAuthors,
-            version,
-            loaders
-          ) {
-            console.log("📦 Packaging datapack as mod...");
-            
-            const datapackBuffer = await readFile(datapackPath);
-            const datapackFile = new File([datapackBuffer], "datapack.zip");
-            
-            const platforms = loaders
-              .map(loader => {
-                const loaderUpper = loader.toUpperCase();
-                return ModPlatforms[loaderUpper];
-              })
-              .filter(Boolean);
-            
-            console.log(`  - Platforms: ${platforms.join(", ")}`);
-            console.log(`  - Version: ${version}`);
-            console.log(`  - Mod ID: ${modId}`);
-            console.log(`  - Mod Name: ${modName}`);
-            
-            const modResponse = await convertDatapack(
-              datapackFile,
-              platforms,
-              {
-                id: modId,
-                version: version,
-                name: modName,
-                description: "",
-                authors: modAuthors
-              }
-            );
-            
-            const modBuffer = await modResponse.arrayBuffer();
-            await writeFile(outputPath, Buffer.from(modBuffer));
-            
-            console.log("✅ Mod packaged successfully!");
-          }
-          
           const args = JSON.parse(process.argv[2]);
-          await packageAsMod(
-            args.datapackPath,
-            args.outputPath,
-            args.modId,
-            args.modName,
-            args.modAuthors,
-            args.version,
-            args.loaders
-          );
+          const buffer = await readFile(args.input);
+          const file = new File([buffer], "datapack.zip");
+          const platforms = args.loaders.map(l => ModPlatforms[l.toUpperCase()]).filter(Boolean);
+          
+          const response = await convertDatapack(file, platforms, {
+            id: args.id,
+            version: args.version,
+            name: args.name,
+            description: "",
+            authors: args.authors
+          });
+          
+          await writeFile(args.output, Buffer.from(await response.arrayBuffer()));
           SCRIPT
-
-      - name: Package as mod
-        if: steps.changeset.outputs.found == 'true' && steps.config.outputs.package_as_mod == 'true'
-        run: |
-          MOD_NAME="${{ steps.config.outputs.mod_name }}"
-          if [ -z "$MOD_NAME" ]; then
-            MOD_NAME="${{ github.event.repository.name }}"
-          fi
           
-          node package-as-mod.js "$(cat <<EOF
-          {
-            "datapackPath": "dist/datapack.zip",
-            "outputPath": "dist/${{ steps.config.outputs.mod_id }}-${{ steps.version.outputs.version }}.jar",
-            "modId": "${{ steps.config.outputs.mod_id }}",
-            "modName": "$MOD_NAME",
-            "modAuthors": ${{ steps.config.outputs.mod_authors }},
-            "version": "${{ steps.version.outputs.version }}",
-            "loaders": ${{ steps.loaders.outputs.loaders_json }}
-          }
+          MOD_NAME="${{ steps.config.outputs.package_as_mod_name }}"
+          [ -z "$MOD_NAME" ] && MOD_NAME="${{ github.event.repository.name }}"
+          
+          node convert.js "$(jq -n \
+            --arg input "dist/${{ steps.config.outputs.package_as_mod_id }}-${{ steps.version.outputs.version }}.zip" \
+            --arg output "dist/${{ steps.config.outputs.package_as_mod_id }}-${{ steps.version.outputs.version }}.jar" \
+            --arg id "${{ steps.config.outputs.package_as_mod_id }}" \
+            --arg version "${{ steps.version.outputs.version }}" \
+            --arg name "$MOD_NAME" \
+            --argjson authors '${{ steps.config.outputs.package_as_mod_authors }}' \
+            --argjson loaders '${{ steps.loaders.outputs.json }}' \
+            '{input:$input, output:$output, id:$id, version:$version, name:$name, authors:$authors, loaders:$loaders}')"
+
+      - name: Fetch CurseForge game versions
+        id: cf_versions
+        if: steps.changeset.outputs.found == 'true' && (steps.config.outputs.curseforge_datapack_enabled == 'true' || steps.config.outputs.curseforge_mod_enabled == 'true')
+        run: |
+          curl -sS "https://minecraft.curseforge.com/api/game/versions" \
+            -H "X-Api-Token: ${{ secrets.CURSEFORGE_TOKEN }}" > cf_versions.json
+          
+          python - <<'EOF'
+          import json, os
+          
+          with open('cf_versions.json', 'r') as f:
+              versions = json.load(f)
+          
+          game_versions = json.loads('${{ steps.game_versions.outputs.json }}')
+          loaders = json.loads('${{ steps.loaders.outputs.json }}')
+          java_versions = json.loads('${{ steps.config.outputs.curseforge_java_versions }}')
+          environments = json.loads('${{ steps.config.outputs.curseforge_environments }}')
+          
+          game_ids = [v['id'] for v in versions if v['name'] in game_versions]
+          loader_ids = [v['id'] for v in versions if v['name'] in [l.capitalize() for l in loaders]]
+          java_ids = [v['id'] for v in versions if v['name'] in java_versions]
+          env_names = [e.capitalize() for e in environments]
+          env_ids = [v['id'] for v in versions if v['name'] in env_names]
+          
+          all_ids = game_ids + loader_ids + java_ids
+          all_ids = game_ids + loader_ids + java_ids + env_ids
+          
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"ids={json.dumps(all_ids)}\n")
+              f.write(f"game_ids={json.dumps(game_ids)}\n")
+              f.write(f"env_ids={json.dumps(env_ids)}\n")
           EOF
-          )"
 
-      - name: Upload datapack to Modrinth
-        if: steps.changeset.outputs.found == 'true'
+      - name: Upload to Modrinth (Datapack)
+        if: steps.changeset.outputs.found == 'true' && steps.config.outputs.modrinth_enabled == 'true'
         run: |
-          FILENAME="${{ steps.config.outputs.mod_id }}-${{ steps.version.outputs.version }}.zip"
+          FILENAME="${{ steps.config.outputs.package_as_mod_id }}-${{ steps.version.outputs.version }}.zip"
           
-          DATA_JSON=$(jq -n \
-            --arg project_id "${{ steps.config.outputs.project_id }}" \
+          DATA=$(jq -n \
+            --arg pid "${{ steps.config.outputs.modrinth_project_id }}" \
             --arg name "v${{ steps.version.outputs.version }} (Datapack)" \
-            --arg version_number "${{ steps.version.outputs.version }}" \
-            --arg version_type "${{ steps.parse.outputs.version_type }}" \
-            --arg changelog "${{ steps.parse.outputs.changelog }}" \
-            --argjson game_versions '["${{ steps.game_versions.outputs.csv }}"]' \
-            --argjson loaders '["datapack"]' \
-            '{
-              project_id:$project_id,
-              name:$name,
-              version_number:$version_number,
-              changelog:$changelog,
-              version_type:$version_type,
-              game_versions:($game_versions[0] | split(",")),
-              loaders:$loaders,
-              dependencies:[],
-              featured:false,
-              file_parts:["file"],
-              primary_file:"file"
-            }')
+            --arg ver "${{ steps.version.outputs.version }}" \
+            --arg type "${{ steps.parse.outputs.version_type }}" \
+            --arg log "${{ steps.parse.outputs.changelog }}" \
+            --arg gv "${{ steps.game_versions.outputs.csv }}" \
+            '{project_id:$pid, name:$name, version_number:$ver, changelog:$log, version_type:$type, game_versions:($gv|split(",")), loaders:["datapack"], dependencies:[], file_parts:["file"], primary_file:"file"}')
           
-          echo "$DATA_JSON" | jq .
-          
-          code=$(curl -sS -o datapack_response.json -w "%{http_code}" \
+          curl -sS -o resp.json -w "%{http_code}" \
             -X POST "https://api.modrinth.com/v2/version" \
             -H "Authorization: ${{ secrets.MODRINTH_TOKEN }}" \
-            -H "User-Agent: ${{ github.repository }} CI" \
-            -F "data=${DATA_JSON};type=application/json" \
-            -F "file=@dist/datapack.zip;type=application/zip;filename=${FILENAME}")
+            -H "User-Agent: ${{ github.repository }}" \
+            -F "data=${DATA};type=application/json" \
+            -F "file=@dist/${FILENAME};filename=${FILENAME}" | tee code.txt
           
-          echo "HTTP $code"
-          cat datapack_response.json | jq . || cat datapack_response.json
-          
-          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
-            exit 1
-          fi
+          cat resp.json | jq .
+          [ $(cat code.txt) -ge 200 ] && [ $(cat code.txt) -lt 300 ] || exit 1
 
-      - name: Upload mod to Modrinth
-        if: steps.changeset.outputs.found == 'true' && steps.config.outputs.package_as_mod == 'true'
+      - name: Upload to Modrinth (Mod)
+        if: steps.changeset.outputs.found == 'true' && steps.config.outputs.modrinth_enabled == 'true' && steps.config.outputs.package_as_mod_enabled == 'true'
         run: |
-          LOADERS_JSON='${{ steps.parse.outputs.loaders }}'
-          LOADERS_CSV=$(echo "$LOADERS_JSON" | jq -r 'join(",")')
-          FILENAME="${{ steps.config.outputs.mod_id }}-${{ steps.version.outputs.version }}.jar"
+          FILENAME="${{ steps.config.outputs.package_as_mod_id }}-${{ steps.version.outputs.version }}.jar"
           
-          if [ -z "$LOADERS_CSV" ]; then
-            echo "Error: LOADERS_CSV is empty"
-            exit 1
-          fi
-          
-          DATA_JSON=$(jq -n \
-            --arg project_id "${{ steps.config.outputs.project_id }}" \
+          DATA=$(jq -n \
+            --arg pid "${{ steps.config.outputs.modrinth_project_id }}" \
             --arg name "v${{ steps.version.outputs.version }} (Mod)" \
-            --arg version_number "${{ steps.version.outputs.version }}" \
-            --arg version_type "${{ steps.parse.outputs.version_type }}" \
-            --arg changelog "${{ steps.parse.outputs.changelog }}" \
-            --arg game_versions "${{ steps.game_versions.outputs.csv }}" \
-            --arg loaders_csv "$LOADERS_CSV" \
-            '{
-              project_id:$project_id,
-              name:$name,
-              version_number:$version_number,
-              changelog:$changelog,
-              version_type:$version_type,
-              game_versions:($game_versions | split(",")),
-              loaders:($loaders_csv | split(",")),
-              dependencies:[],
-              featured:false,
-              file_parts:["file"],
-              primary_file:"file"
-            }')
+            --arg ver "${{ steps.version.outputs.version }}" \
+            --arg type "${{ steps.parse.outputs.version_type }}" \
+            --arg log "${{ steps.parse.outputs.changelog }}" \
+            --arg gv "${{ steps.game_versions.outputs.csv }}" \
+            --arg ld "${{ steps.loaders.outputs.csv }}" \
+            '{project_id:$pid, name:$name, version_number:$ver, changelog:$log, version_type:$type, game_versions:($gv|split(",")), loaders:($ld|split(",")), dependencies:[], file_parts:["file"], primary_file:"file"}')
           
-          echo "$DATA_JSON" | jq .
-          
-          code=$(curl -sS -o mod_response.json -w "%{http_code}" \
+          curl -sS -o resp.json -w "%{http_code}" \
             -X POST "https://api.modrinth.com/v2/version" \
             -H "Authorization: ${{ secrets.MODRINTH_TOKEN }}" \
-            -H "User-Agent: ${{ github.repository }} CI" \
-            -F "data=${DATA_JSON};type=application/json" \
-            -F "file=@dist/${FILENAME};type=application/java-archive;filename=${FILENAME}")
+            -H "User-Agent: ${{ github.repository }}" \
+            -F "data=${DATA};type=application/json" \
+            -F "file=@dist/${FILENAME};filename=${FILENAME}" | tee code.txt
           
-          echo "HTTP $code"
-          cat mod_response.json | jq . || cat mod_response.json
-          
-          if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
-            exit 1
-          fi
+          cat resp.json | jq .
+          [ $(cat code.txt) -ge 200 ] && [ $(cat code.txt) -lt 300 ] || exit 1
 
-      - name: Update version in deploy.yaml
+      - name: Upload to CurseForge (Datapack)
+        if: steps.changeset.outputs.found == 'true' && steps.config.outputs.curseforge_datapack_enabled == 'true'
+        run: |
+          FILENAME="${{ steps.config.outputs.package_as_mod_id }}-${{ steps.version.outputs.version }}.zip"
+          
+          DATA=$(jq -n \
+            --arg name "v${{ steps.version.outputs.version }}" \
+            --arg log "${{ steps.parse.outputs.changelog }}" \
+            --arg type "${{ steps.parse.outputs.version_type }}" \
+            --argjson ids '${{ steps.cf_versions.outputs.game_ids }}' \
+            '{displayName:$name, changelog:$log, changelogType:"markdown", releaseType:$type, gameVersions:$ids}')
+          
+          curl -sS -o resp.json -w "%{http_code}" \
+            -X POST "https://minecraft.curseforge.com/api/projects/${{ steps.config.outputs.curseforge_datapack_id }}/upload-file" \
+            -H "X-Api-Token: ${{ secrets.CURSEFORGE_TOKEN }}" \
+            -H "User-Agent: ${{ github.repository }}" \
+            -F "metadata=${DATA};type=application/json" \
+            -F "file=@dist/${FILENAME}" | tee code.txt
+          
+          cat resp.json | jq .
+          [ $(cat code.txt) -ge 200 ] && [ $(cat code.txt) -lt 300 ] || exit 1
+
+      - name: Upload to CurseForge (Mod)
+        if: steps.changeset.outputs.found == 'true' && steps.config.outputs.curseforge_mod_enabled == 'true'
+        run: |
+          FILENAME="${{ steps.config.outputs.package_as_mod_id }}-${{ steps.version.outputs.version }}.jar"
+          
+          DATA=$(jq -n \
+            --arg name "v${{ steps.version.outputs.version }}" \
+            --arg log "${{ steps.parse.outputs.changelog }}" \
+            --arg type "${{ steps.parse.outputs.version_type }}" \
+            --argjson ids '${{ steps.cf_versions.outputs.ids }}' \
+            '{displayName:$name, changelog:$log, changelogType:"markdown", releaseType:$type, gameVersions:$ids}')
+          
+          curl -sS -o resp.json -w "%{http_code}" \
+            -X POST "https://minecraft.curseforge.com/api/projects/${{ steps.config.outputs.curseforge_mod_id }}/upload-file" \
+            -H "X-Api-Token: ${{ secrets.CURSEFORGE_TOKEN }}" \
+            -H "User-Agent: ${{ github.repository }}" \
+            -F "metadata=${DATA};type=application/json" \
+            -F "file=@dist/${FILENAME}" | tee code.txt
+          
+          cat resp.json | jq .
+          [ $(cat code.txt) -ge 200 ] && [ $(cat code.txt) -lt 300 ] || exit 1
+
+      - name: Update config
         if: steps.changeset.outputs.found == 'true'
         run: |
           python - <<'EOF'
@@ -503,43 +374,21 @@ jobs:
           with open('deploy.yaml', 'r') as f:
               config = yaml.safe_load(f)
           
-          config['version']['major'] = int("${{ steps.version.outputs.major }}")
-          config['version']['minor'] = int("${{ steps.version.outputs.minor }}")
-          config['version']['patch'] = int("${{ steps.version.outputs.patch }}")
+          config['project']['version']['major'] = int("${{ steps.version.outputs.major }}")
+          config['project']['version']['minor'] = int("${{ steps.version.outputs.minor }}")
+          config['project']['version']['patch'] = int("${{ steps.version.outputs.patch }}")
           
           with open('deploy.yaml', 'w') as f:
               yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-          
-          print(f"✅ Updated deploy.yaml to version ${{ steps.version.outputs.version }}")
           EOF
 
-      - name: Remove changeset file
+      - name: Commit
         if: steps.changeset.outputs.found == 'true'
         run: |
           rm ${{ steps.changeset.outputs.file }}
-          echo "✅ Removed changeset file"
-
-      - name: Commit and push changes
-        if: steps.changeset.outputs.found == 'true'
-        run: |
+          rm -f .changeset/*.md
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add deploy.yaml
-          git add .changeset
+          git add deploy.yaml .changeset
           git commit -m "chore: release v${{ steps.version.outputs.version }}"
           git push
-          echo "✅ Changes committed and pushed"
-
-      - name: Summary
-        if: steps.changeset.outputs.found == 'true'
-        run: |
-          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version**: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Type**: ${{ steps.parse.outputs.version_type }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Game Versions**: ${{ steps.game_versions.outputs.csv }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Loaders**: ${{ steps.loaders.outputs.loaders_csv }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Package as Mod**: ${{ steps.config.outputs.package_as_mod }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Changelog" >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.parse.outputs.changelog }}" >> $GITHUB_STEP_SUMMARY
