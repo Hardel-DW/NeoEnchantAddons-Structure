@@ -25,13 +25,38 @@ version:
 
 build:
   exclude:
+modrinth:
+  project_id: "AABBCCDD"
+  loaders:
+    - fabric
+    - forge
+    - neoforge
+    - quilt
+  package_as_mod: true
+
+mod:
+  id: "my_datapack_mod"
+  name: null
+  authors:
+    - "Hardel"
+    - "VoxelTeam"
+  homepage: "https://github.com/username/repo"
+  issues: "https://github.com/username/repo/issues"
+  sources: "https://github.com/username/repo"
+
+version:
+  major: 1
+  minor: 0
+  patch: 0
+
+build:
+  exclude:
     - ".git"
     - ".github"
     - ".changeset"
     - ".vscode"
     - ".cursor"
     - "node_modules"
-    - "dist"
     - "README.md"
     - ".gitignore"
     - "deploy.yaml"
