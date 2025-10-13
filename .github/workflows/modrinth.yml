@@ -445,7 +445,8 @@ jobs:
       - name: Upload mod to Modrinth
         if: steps.changeset.outputs.found == 'true' && steps.config.outputs.package_as_mod == 'true'
         run: |
-          LOADERS_CSV="${{ steps.loaders.outputs.loaders_csv }}"
+          LOADERS_JSON='${{ steps.parse.outputs.loaders }}'
+          LOADERS_CSV=$(echo "$LOADERS_JSON" | jq -r 'join(",")')
           FILENAME="${{ steps.config.outputs.mod_id }}-${{ steps.version.outputs.version }}.jar"
           
           if [ -z "$LOADERS_CSV" ]; then
