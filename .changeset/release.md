@@ -10,4 +10,4 @@ version_bump: minor
 ---
 
 ## Changelog
-Test 123456789abc
+Test 123456789abcd
