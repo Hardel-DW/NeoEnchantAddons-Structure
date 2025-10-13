@@ -1,15 +1,14 @@
 project:
   type: datapack
-
-modrinth:
-  enabled: true
-  project_id: bHyNNNwZ
-  package_as_mod: true
   loaders:
     - fabric
     - forge
     - neoforge
     - quilt
+
+modrinth:
+  enabled: true
+  project_id: bHyNNNwZ
 
 curseforge:
   datapack:
@@ -23,9 +22,11 @@ curseforge:
       - "Java 21"
       - "Java 22"
     environments:
+      - client
       - server
 
-mod:
+package_as_mod:
+  enabled: true
   id: mr_nneoenchant_addonsstructure
   name: NE+ Addons - Structure
   authors:
