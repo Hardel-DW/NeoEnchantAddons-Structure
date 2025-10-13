@@ -1,486 +1,377 @@
-name: Deploy to Modrinth
+name: Publish to Modrinth (datapack + mod, changeset)
 
 on:
   push:
+    branches: [ main ]
     paths:
-      - '.changeset/*.md'
+      - ".changeset/**/*.md"
+      - "deploy.yml"
+
+permissions:
+  contents: write
 
 jobs:
-  deploy:
+  publish:
     runs-on: ubuntu-latest
-    
+    env:
+      MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install Python dependencies
+      - name: Setup tools
         run: |
-          pip install pyyaml
+          sudo apt-get update
+          sudo apt-get install -y jq unzip zip
+          npm i -g gray-matter yaml
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
 
-      - name: Detect changeset file
-        id: changeset
+      # 1) Lire deploy.yml & .changeset/*.md, agréger et calculer la nouvelle version
+      - name: Parse deploy.yml & changesets
+        id: meta
+        shell: bash
         run: |
-          CHANGESET_FILE=$(find .changeset -name "*.md" -type f | head -n 1)
-          if [ -z "$CHANGESET_FILE" ]; then
-            echo "No changeset found, exiting"
-            echo "found=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          echo "found=true" >> $GITHUB_OUTPUT
-          echo "file=$CHANGESET_FILE" >> $GITHUB_OUTPUT
-          echo "✅ Found changeset: $CHANGESET_FILE"
+          set -euo pipefail
 
-      - name: Parse changeset
-        id: parse
-        if: steps.changeset.outputs.found == 'true'
-        run: |
-          python - <<'EOF'
-          import re
-          import json
-          import os
-          import yaml
-          
-          changeset_file = "${{ steps.changeset.outputs.file }}"
-          
-          with open(changeset_file, 'r') as f:
-              content = f.read()
-          
-          # Extraire le frontmatter YAML
-          match = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
-          if not match:
-              print("❌ Invalid changeset format")
-              exit(1)
-          
-          frontmatter = yaml.safe_load(match.group(1))
-          changelog = match.group(2).strip()
-          
-          # Extraire les données
-          game_versions = frontmatter.get('game_versions', [])
-          loaders = frontmatter.get('loaders', None)
-          version_type = frontmatter.get('version_type', 'release')
-          version_bump = frontmatter.get('version_bump', 'patch')
-          
-          # Écrire dans GITHUB_OUTPUT
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f"game_versions={json.dumps(game_versions)}\n")
-              f.write(f"loaders={json.dumps(loaders) if loaders else 'null'}\n")
-              f.write(f"version_type={version_type}\n")
-              f.write(f"version_bump={version_bump}\n")
-              f.write(f"changelog<<EOF\n{changelog}\nEOF\n")
-          
-          print(f"✅ Parsed changeset:")
-          print(f"  - Game versions: {game_versions}")
-          print(f"  - Loaders: {loaders}")
-          print(f"  - Version type: {version_type}")
-          print(f"  - Version bump: {version_bump}")
-          EOF
+          DEPLOY_FILE="deploy.yml"
+          test -f "$DEPLOY_FILE"
+          test -d ".changeset"
 
-      - name: Read deploy config
-        id: config
-        if: steps.changeset.outputs.found == 'true'
-        run: |
-          python - <<'EOF'
-          import yaml
-          import json
-          import os
-          
-          with open('deploy.yaml', 'r') as f:
-              config = yaml.safe_load(f)
-          
-          # Extraire les configurations
-          project_id = config['modrinth']['project_id']
-          default_loaders = config['modrinth']['loaders']
-          package_as_mod = config['modrinth'].get('package_as_mod', False)
-          
-          mod_id = config['mod']['id']
-          mod_name = config['mod'].get('name', None)
-          mod_authors = config['mod']['authors']
-          
-          version = config['version']
-          
-          # Extraire les exclusions
-          exclude_patterns = config.get('build', {}).get('exclude', [])
-          
-          # Écrire dans GITHUB_OUTPUT
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f"project_id={project_id}\n")
-              f.write(f"default_loaders={json.dumps(default_loaders)}\n")
-              f.write(f"package_as_mod={str(package_as_mod).lower()}\n")
-              f.write(f"mod_id={mod_id}\n")
-              f.write(f"mod_name={mod_name or ''}\n")
-              f.write(f"mod_authors={json.dumps(mod_authors)}\n")
-              f.write(f"current_version={version['major']}.{version['minor']}.{version['patch']}\n")
-              f.write(f"version_major={version['major']}\n")
-              f.write(f"version_minor={version['minor']}\n")
-              f.write(f"version_patch={version['patch']}\n")
-              f.write(f"exclude_patterns={json.dumps(exclude_patterns)}\n")
-          
-          print(f"✅ Read config:")
-          print(f"  - Project ID: {project_id}")
-          print(f"  - Package as mod: {package_as_mod}")
-          print(f"  - Current version: {version['major']}.{version['minor']}.{version['patch']}")
-          print(f"  - Exclude patterns: {len(exclude_patterns)} patterns")
-          EOF
+          # YAML -> JSON
+          DEPLOY_JSON="$(node -e 'const fs=require("fs");const yaml=require("yaml");
+            const o=yaml.parse(fs.readFileSync("deploy.yml","utf8"));console.log(JSON.stringify(o||{}))')"
+          echo "$DEPLOY_JSON" | jq . > deploy.json
 
-      - name: Increment version
-        id: version
-        if: steps.changeset.outputs.found == 'true'
-        run: |
-          python - <<'EOF'
-          import os
-          
-          bump = "${{ steps.parse.outputs.version_bump }}"
-          major = int("${{ steps.config.outputs.version_major }}")
-          minor = int("${{ steps.config.outputs.version_minor }}")
-          patch = int("${{ steps.config.outputs.version_patch }}")
-          
-          if bump == "major":
-              major += 1
-              minor = 0
-              patch = 0
-          elif bump == "minor":
-              minor += 1
-              patch = 0
-          elif bump == "patch":
-              patch += 1
-          else:
-              print(f"❌ Invalid version bump: {bump}")
-              exit(1)
-          
-          new_version = f"{major}.{minor}.{patch}"
-          
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f"version={new_version}\n")
-              f.write(f"major={major}\n")
-              f.write(f"minor={minor}\n")
-              f.write(f"patch={patch}\n")
-          
-          print(f"✅ Version bumped: ${{ steps.config.outputs.current_version }} -> {new_version}")
-          EOF
-
-      - name: Resolve loaders
-        id: loaders
-        if: steps.changeset.outputs.found == 'true'
-        run: |
-          python - <<'EOF'
-          import json
-          import os
-          
-          changeset_loaders = '${{ steps.parse.outputs.loaders }}'
-          default_loaders = '${{ steps.config.outputs.default_loaders }}'
-          
-          if changeset_loaders != 'null':
-              loaders = json.loads(changeset_loaders)
-          else:
-              loaders = json.loads(default_loaders)
-          
-          # Convertir en format comma-separated pour Modrinth
-          loaders_csv = ','.join(loaders)
-          
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f"loaders={loaders_csv}\n")
-              f.write(f"loaders_json={json.dumps(loaders)}\n")
-          
-          print(f"✅ Resolved loaders: {loaders}")
-          EOF
-
-      - name: Format game versions
-        id: game_versions
-        if: steps.changeset.outputs.found == 'true'
-        run: |
-          python - <<'EOF'
-          import json
-          import os
-          
-          game_versions = json.loads('${{ steps.parse.outputs.game_versions }}')
-          game_versions_csv = ','.join(game_versions)
-          
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f"csv={game_versions_csv}\n")
-          
-          print(f"✅ Game versions: {game_versions}")
-          EOF
-
-      - name: Create build directory
-        if: steps.changeset.outputs.found == 'true'
-        run: |
-          mkdir -p dist build-temp
-
-      - name: Copy files with exclusions
-        if: steps.changeset.outputs.found == 'true'
-        run: |
-          python - <<'EOF'
-          import os
-          import shutil
-          import json
-          from pathlib import Path
-          from fnmatch import fnmatch
-          
-          exclude_patterns = json.loads('${{ steps.config.outputs.exclude_patterns }}')
-          exclude_patterns.extend(['build-temp', 'dist'])
-          
-          def should_exclude(path, exclude_patterns):
-              """Vérifie si un fichier/dossier doit être exclu"""
-              path_str = str(path)
-              path_name = path.name
-              
-              for pattern in exclude_patterns:
-                  # Pattern exact (dossier ou fichier)
-                  if path_name == pattern or path_str == pattern:
-                      return True
-                  
-                  # Pattern glob
-                  if fnmatch(path_name, pattern):
-                      return True
-                  
-                  # Pattern dans le chemin
-                  if fnmatch(path_str, pattern) or fnmatch(path_str, f"*/{pattern}") or fnmatch(path_str, f"*/{pattern}/*"):
-                      return True
-              
-              return False
-          
-          def copy_with_exclusions(src, dst, exclude_patterns):
-              """Copy recursively excluding patterns"""
-              src_path = Path(src)
-              dst_path = Path(dst)
-              
-              copied_count = 0
-              excluded_count = 0
-              
-              for item in src_path.rglob('*'):
-                  relative_path = item.relative_to(src_path)
-                  
-                  should_skip = False
-                  for parent in [relative_path] + list(relative_path.parents):
-                      if parent != Path('.') and should_exclude(parent, exclude_patterns):
-                          should_skip = True
-                          break
-                  
-                  if should_skip:
-                      excluded_count += 1
-                      continue
-                  
-                  dest_item = dst_path / relative_path
-                  
-                  if item.is_dir():
-                      dest_item.mkdir(parents=True, exist_ok=True)
-                  else:
-                      dest_item.parent.mkdir(parents=True, exist_ok=True)
-                      shutil.copy2(item, dest_item)
-                      copied_count += 1
-              
-              return copied_count, excluded_count
-          
-          # Copier les fichiers en excluant les patterns
-          copied, excluded = copy_with_exclusions('.', 'build-temp', exclude_patterns)
-          
-          print(f"✅ Files copied: {copied}")
-          print(f"⛔ Files/folders excluded: {excluded}")
-          print(f"📋 Exclusion patterns applied: {len(exclude_patterns)}")
-          EOF
-
-      - name: Build datapack
-        if: steps.changeset.outputs.found == 'true'
-        run: |
-          echo "📦 Building datapack..."
-          cd build-temp
-          
-          zip -r ../dist/datapack.zip . -x "*.git*" "*.DS_Store"
-          
-          cd ..
-          
-          if [ ! -f "dist/datapack.zip" ]; then
-            echo "❌ Failed to create datapack.zip"
-            exit 1
-          fi
-          
-          SIZE=$(du -h dist/datapack.zip | cut -f1)
-          echo "✅ Datapack built successfully (${SIZE})"
-
-      - name: Install converter dependencies
-        if: steps.changeset.outputs.found == 'true' && steps.config.outputs.package_as_mod == 'true'
-        run: |
-          npm install @voxelio/converter @voxelio/breeze @voxelio/zip yaml
-
-      - name: Create package-as-mod script
-        if: steps.changeset.outputs.found == 'true' && steps.config.outputs.package_as_mod == 'true'
-        run: |
-          cat > package-as-mod.js <<'SCRIPT'
-          import { convertDatapack, ModPlatforms } from "@voxelio/converter";
-          import { readFile, writeFile } from "fs/promises";
-          
-          async function packageAsMod(
-            datapackPath,
-            outputPath,
-            modId,
-            modName,
-            modAuthors,
-            version,
-            loaders
-          ) {
-            console.log("📦 Packaging datapack as mod...");
-            
-            const datapackBuffer = await readFile(datapackPath);
-            const datapackFile = new File([datapackBuffer], "datapack.zip");
-            
-            const platforms = loaders
-              .map(loader => {
-                const loaderUpper = loader.toUpperCase();
-                return ModPlatforms[loaderUpper];
-              })
-              .filter(Boolean);
-            
-            console.log(`  - Platforms: ${platforms.join(", ")}`);
-            console.log(`  - Version: ${version}`);
-            console.log(`  - Mod ID: ${modId}`);
-            console.log(`  - Mod Name: ${modName}`);
-            
-            const modResponse = await convertDatapack(
-              datapackFile,
-              platforms,
-              {
-                id: modId,
-                version: version,
-                name: modName,
-                description: "",
-                authors: modAuthors
-              }
-            );
-            
-            const modBuffer = await modResponse.arrayBuffer();
-            await writeFile(outputPath, Buffer.from(modBuffer));
-            
-            console.log("✅ Mod packaged successfully!");
+          # Agréger tous les .md
+          node >/tmp/agg.json <<'NODE'
+          const fs=require("fs");
+          const path=require("path");
+          const matter=require("gray-matter");
+          const dir=".changeset";
+          const files=(fs.existsSync(dir)?fs.readdirSync(dir):[]).filter(f=>f.endsWith(".md")).map(f=>path.join(dir,f));
+          if(!files.length){ console.error("Aucun .md dans .changeset/"); process.exit(1); }
+          const bumpRank=v=>v==="major"?3:v==="minor"?2:v==="patch"?1:0;
+          let bump="patch", br=1, version_type=null;
+          const gvs=new Set(), loaders=new Set();
+          let changelog="";
+          for(const f of files){
+            const r=matter(fs.readFileSync(f,"utf8"));
+            const fm=r.data||{};
+            if(bumpRank(fm.bump)>br){ bump=fm.bump; br=bumpRank(fm.bump); }
+            if(!version_type && fm.type) version_type=fm.type;
+            (fm.game_versions||[]).forEach(v=>gvs.add(String(v)));
+            (fm.loaders||[]).forEach(l=>loaders.add(String(l)));
+            const body=(r.content||"").trim();
+            if(body) changelog += `### ${f}\n${body}\n\n`;
           }
-          
-          const args = JSON.parse(process.argv[2]);
-          await packageAsMod(
-            args.datapackPath,
-            args.outputPath,
-            args.modId,
-            args.modName,
-            args.modAuthors,
-            args.version,
-            args.loaders
-          );
-          SCRIPT
+          const out={ bump, version_type, game_versions:[...gvs], loaders:[...loaders], changelog:changelog.trim() };
+          console.log(JSON.stringify(out));
+NODE
 
-      - name: Package as mod
-        if: steps.changeset.outputs.found == 'true' && steps.config.outputs.package_as_mod == 'true'
-        run: |
-          MOD_NAME="${{ steps.config.outputs.mod_name }}"
-          if [ -z "$MOD_NAME" ]; then
-            MOD_NAME="${{ github.event.repository.name }}"
+          cat /tmp/agg.json | jq . > changes.json
+
+          # Version bump
+          BUMP="$(jq -r '.bump // "patch"' changes.json)"
+          MAJOR=$(jq -r '.version.major' deploy.json)
+          MINOR=$(jq -r '.version.minor' deploy.json)
+          PATCH=$(jq -r '.version.patch' deploy.json)
+          case "$BUMP" in
+            major) MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR+1)); PATCH=0 ;;
+            *)     PATCH=$((PATCH+1)) ;;
+          esac
+          VERSION="${MAJOR}.${MINOR}.${PATCH}"
+
+          # version_type
+          VERSION_TYPE="$(jq -r '.version_type // empty' changes.json)"
+          if [ -z "$VERSION_TYPE" ] || [ "$VERSION_TYPE" = "null" ]; then
+            VERSION_TYPE="$(jq -r '.modrinth.version_type // "release"' deploy.json)"
           fi
-          
-          node package-as-mod.js "$(cat <<EOF
+
+          # loaders pour la version MOD = union(changeset, deploy)
+          LOADERS_MOD="$(jq -c '([.loaders[]] // []) as $a | input | ([.modrinth.loaders[]] // []) as $b | ( ($a+$b)|unique )' \
+            changes.json deploy.json)"
+
+          # game_versions (obligatoire)
+          GAME_VERSIONS="$(jq -c '.game_versions // []' changes.json)"
+
+          # datapack loaders (fixés à ["datapack"])
+          LOADERS_DP='["datapack"]'
+
+          PROJECT_ID="$(jq -r '.modrinth.project_id' deploy.json)"
+          PACKAGE_AS_MOD="$(jq -r '.modrinth.package_as_mod // false' deploy.json)"
+
+          # Métadonnées MOD (utiliser TOUS les champs fournis)
+          MOD_ID="$(jq -r '.mod.id' deploy.json)"
+          MOD_NAME="$(jq -r '.mod.name' deploy.json)"
+          MOD_AUTHORS="$(jq -c '.mod.authors // []' deploy.json)"
+          MOD_HOMEPAGE="$(jq -r '.mod.homepage // empty' deploy.json)"
+          MOD_ISSUES="$(jq -r '.mod.issues // empty' deploy.json)"
+          MOD_SOURCES="$(jq -r '.mod.sources // empty' deploy.json)"
+
+          # Changelog (concat)
+          CHANGELOG="$(jq -r '.changelog' changes.json)"
+          printf '%s\n' "$CHANGELOG" > CHANGELOG_MODRINTH.md
+
           {
-            "datapackPath": "dist/datapack.zip",
-            "outputPath": "dist/${{ steps.config.outputs.mod_id }}-${{ steps.version.outputs.version }}.jar",
-            "modId": "${{ steps.config.outputs.mod_id }}",
-            "modName": "$MOD_NAME",
-            "modAuthors": ${{ steps.config.outputs.mod_authors }},
-            "version": "${{ steps.version.outputs.version }}",
-            "loaders": ${{ steps.loaders.outputs.loaders_json }}
-          }
-          EOF
-          )"
+            echo "version=$VERSION"
+            echo "major=$MAJOR"
+            echo "minor=$MINOR"
+            echo "patch=$PATCH"
+            echo "version_type=$VERSION_TYPE"
+            echo "project_id=$PROJECT_ID"
+            echo "loaders_mod=$LOADERS_MOD"
+            echo "loaders_dp=$LOADERS_DP"
+            echo "game_versions=$GAME_VERSIONS"
+            echo "package_as_mod=$PACKAGE_AS_MOD"
+            echo "deploy_file=$DEPLOY_FILE"
+            echo "mod_id=$MOD_ID"
+            echo "mod_name=$MOD_NAME"
+            echo "mod_authors=$MOD_AUTHORS"
+            echo "mod_homepage=$MOD_HOMEPAGE"
+            echo "mod_issues=$MOD_ISSUES"
+            echo "mod_sources=$MOD_SOURCES"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Upload datapack to Modrinth
-        if: steps.changeset.outputs.found == 'true'
-        uses: Kir-Antipov/mc-publish@v3.3
-        with:
-          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
-          modrinth-id: ${{ steps.config.outputs.project_id }}
-          
-          files: dist/datapack.zip
-          
-          name: "v${{ steps.version.outputs.version }} (Datapack)"
-          version: ${{ steps.version.outputs.version }}
-          version-type: ${{ steps.parse.outputs.version_type }}
-          
-          changelog: ${{ steps.parse.outputs.changelog }}
-          
-          loaders: datapack
-          game-versions: ${{ steps.game_versions.outputs.csv }}
-
-      - name: Upload mod to Modrinth
-        if: steps.changeset.outputs.found == 'true' && steps.config.outputs.package_as_mod == 'true'
-        uses: Kir-Antipov/mc-publish@v3.3
-        with:
-          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
-          modrinth-id: ${{ steps.config.outputs.project_id }}
-          
-          files: dist/${{ steps.config.outputs.mod_id }}-${{ steps.version.outputs.version }}.jar
-          
-          name: "v${{ steps.version.outputs.version }} (Mod)"
-          version: ${{ steps.version.outputs.version }}
-          version-type: ${{ steps.parse.outputs.version_type }}
-          
-          changelog: ${{ steps.parse.outputs.changelog }}
-          
-          loaders: ${{ steps.loaders.outputs.loaders_csv }}
-          game-versions: ${{ steps.game_versions.outputs.csv }}
-
-      - name: Update version in deploy.yaml
-        if: steps.changeset.outputs.found == 'true'
+      # 2) Créer le ZIP datapack avec exclusions
+      - name: Build datapack ZIP
+        id: datapack
+        shell: bash
         run: |
-          python - <<'EOF'
-          import yaml
-          
-          with open('deploy.yaml', 'r') as f:
-              config = yaml.safe_load(f)
-          
-          config['version']['major'] = int("${{ steps.version.outputs.major }}")
-          config['version']['minor'] = int("${{ steps.version.outputs.minor }}")
-          config['version']['patch'] = int("${{ steps.version.outputs.patch }}")
-          
-          with open('deploy.yaml', 'w') as f:
-              yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-          
-          print(f"✅ Updated deploy.yaml to version ${{ steps.version.outputs.version }}")
-          EOF
+          set -euo pipefail
+          ART="datapack-${{ steps.meta.outputs.version }}.zip"
 
-      - name: Remove changeset file
-        if: steps.changeset.outputs.found == 'true'
-        run: |
-          rm ${{ steps.changeset.outputs.file }}
-          echo "✅ Removed changeset file"
+          # Prépare le fichier d'exclusions depuis deploy.yml: build.exclude
+          jq -r '.build.exclude[]?' deploy.json > .exclude || true
+          # Fallback safe
+          echo ".git" >> .exclude
+          echo ".github" >> .exclude
+          # Construire la liste -x pour zip
+          EXC_OPTS=()
+          while IFS= read -r p; do
+            [ -z "$p" ] && continue
+            EXC_OPTS+=( "-x" "$p/*" )
+            # aussi pattern simple si c'est un fichier
+            EXC_OPTS+=( "-x" "$p" )
+          done < .exclude
 
-      - name: Commit and push changes
-        if: steps.changeset.outputs.found == 'true'
+          zip -r "$ART" . "${EXC_OPTS[@]}"
+          echo "file=$ART" >> "$GITHUB_OUTPUT"
+
+      # 3) Créer le JAR mod (si package_as_mod)
+      - name: Build MOD JAR
+        if: ${{ steps.meta.outputs.package_as_mod == 'true' }}
+        id: modpkg
+        shell: bash
         run: |
+          set -euo pipefail
+          WORK="packmod"
+          rm -rf "$WORK" && mkdir -p "$WORK"
+          unzip -q "${{ steps.datapack.outputs.file }}" -d "$WORK"
+
+          MODID='${{ steps.meta.outputs.mod_id }}'
+          NAME='${{ steps.meta.outputs.mod_name }}'
+          VERSION='${{ steps.meta.outputs.version }}'
+          AUTHORS='${{ steps.meta.outputs.mod_authors }}'
+          HOMEPAGE='${{ steps.meta.outputs.mod_homepage }}'
+          ISSUES='${{ steps.meta.outputs.mod_issues }}'
+          SOURCES='${{ steps.meta.outputs.mod_sources }}'
+
+          # authors en JSON -> array de strings
+          echo "$AUTHORS" | jq -r '.[]?' > /tmp/auth.txt || true
+
+          # fabric.mod.json
+          if echo '${{ steps.meta.outputs.loaders_mod }}' | jq -r '.[]' | grep -q '^fabric$'; then
+            jq -n \
+              --arg id "$MODID" \
+              --arg name "$NAME" \
+              --arg version "$VERSION" \
+              --arg homepage "$HOMEPAGE" \
+              --arg issues "$ISSUES" \
+              --arg sources "$SOURCES" \
+              --argjson authors "${AUTHORS:-[]}" \
+              '{
+                schemaVersion:1,
+                id:$id,
+                version:$version,
+                name:$name,
+                description:"Packaged as mod",
+                authors:$authors,
+                contact:{
+                  homepage: ($homepage|select(.!="")),
+                  issues:   ($issues|select(.!="")),
+                  sources:  ($sources|select(.!=""))
+                },
+                license:"MIT",
+                environment:"*",
+                depends:{}
+              }' > "$WORK/fabric.mod.json"
+          fi
+
+          # quilt.mod.json
+          if echo '${{ steps.meta.outputs.loaders_mod }}' | jq -r '.[]' | grep -q '^quilt$'; then
+            jq -n \
+              --arg id "$MODID" \
+              --arg name "$NAME" \
+              --arg version "$VERSION" \
+              --arg homepage "$HOMEPAGE" \
+              --arg issues "$ISSUES" \
+              --arg sources "$SOURCES" \
+              --argjson authors "${AUTHORS:-[]}" \
+              '{
+                schema_version:1,
+                quilt_loader:{
+                  group:$id,
+                  id:$id,
+                  version:$version,
+                  metadata:{
+                    name:$name,
+                    description:"Packaged as mod",
+                    contributors: ( $authors | map({name:.}) ),
+                    contact:{
+                      homepage: ($homepage|select(.!="")),
+                      issues:   ($issues|select(.!="")),
+                      sources:  ($sources|select(.!=""))
+                    },
+                    license:"MIT"
+                  }
+                }
+              }' > "$WORK/quilt.mod.json"
+          fi
+
+          # Forge mods.toml
+          if echo '${{ steps.meta.outputs.loaders_mod }}' | jq -r '.[]' | grep -q '^forge$'; then
+            mkdir -p "$WORK/META-INF"
+            cat > "$WORK/META-INF/mods.toml" <<EOF
+modLoader="javafml"
+loaderVersion="[0,)"
+license="MIT"
+[[mods]]
+modId="${MODID}"
+version="${VERSION}"
+displayName="${NAME}"
+description="Packaged as mod"
+EOF
+          fi
+
+          # NeoForge neoforge.mods.toml
+          if echo '${{ steps.meta.outputs.loaders_mod }}' | jq -r '.[]' | grep -q '^neoforge$'; then
+            mkdir -p "$WORK/META-INF"
+            cat > "$WORK/META-INF/neoforge.mods.toml" <<EOF
+modLoader="javafml"
+loaderVersion="[0,)"
+license="MIT"
+[[mods]]
+modId="${MODID}"
+version="${VERSION}"
+displayName="${NAME}"
+description="Packaged as mod"
+EOF
+          fi
+
+          JAR="mod-${{ steps.meta.outputs.version }}.jar"
+          (cd "$WORK" && zip -qr "../$JAR" .)
+          echo "file=$JAR" >> "$GITHUB_OUTPUT"
+
+      # 4) Publier la VERSION DATAPACK (indépendante)
+      - name: Publish Datapack to Modrinth
+        id: publish_dp
+        env:
+          PROJECT_ID: ${{ steps.meta.outputs.project_id }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          VERSION_TYPE: ${{ steps.meta.outputs.version_type }}
+          GAME_VERSIONS: ${{ steps.meta.outputs.game_versions }}
+          LOADERS: ${{ steps.meta.outputs.loaders_dp }}
+          FILE: ${{ steps.datapack.outputs.file }}
+        run: |
+          DATA_JSON=$(jq -n \
+            --arg project_id "$PROJECT_ID" \
+            --arg name "v${VERSION} (datapack)" \
+            --arg version_number "$VERSION" \
+            --arg version_type "$VERSION_TYPE" \
+            --arg changelog "$(cat CHANGELOG_MODRINTH.md)" \
+            --argjson game_versions "$GAME_VERSIONS" \
+            --argjson loaders "$LOADERS" \
+            '{
+              project_id:$project_id,
+              name:$name,
+              version_number:$version_number,
+              changelog:$changelog,
+              version_type:$version_type,
+              game_versions:$game_versions,
+              loaders:$loaders,
+              featured:false,
+              file_parts:["file"],
+              primary_file:"file"
+            }')
+          echo "$DATA_JSON" | jq .
+          code=$(curl -sS -o dp_response.json -w "%{http_code}" \
+            -X POST "https://api.modrinth.com/v2/version" \
+            -H "Authorization: ${MODRINTH_TOKEN}" \
+            -H "User-Agent: $GITHUB_REPOSITORY CI" \
+            -F "data=${DATA_JSON};type=application/json" \
+            -F "file=@${FILE};type=application/zip;filename=$(basename "${FILE}")")
+          echo "HTTP $code"
+          cat dp_response.json | jq . || cat dp_response.json
+          test "$code" -ge 200 -a "$code" -lt 300
+
+      # 5) Publier la VERSION MOD (indépendante, si package_as_mod)
+      - name: Publish Mod to Modrinth
+        if: ${{ steps.meta.outputs.package_as_mod == 'true' }}
+        id: publish_mod
+        env:
+          PROJECT_ID: ${{ steps.meta.outputs.project_id }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          VERSION_TYPE: ${{ steps.meta.outputs.version_type }}
+          GAME_VERSIONS: ${{ steps.meta.outputs.game_versions }}
+          LOADERS: ${{ steps.meta.outputs.loaders_mod }}
+          FILE: ${{ steps.modpkg.outputs.file }}
+        run: |
+          DATA_JSON=$(jq -n \
+            --arg project_id "$PROJECT_ID" \
+            --arg name "v${VERSION} (mod)" \
+            --arg version_number "$VERSION" \
+            --arg version_type "$VERSION_TYPE" \
+            --arg changelog "$(cat CHANGELOG_MODRINTH.md)" \
+            --argjson game_versions "$GAME_VERSIONS" \
+            --argjson loaders "$LOADERS" \
+            '{
+              project_id:$project_id,
+              name:$name,
+              version_number:$version_number,
+              changelog:$changelog,
+              version_type:$version_type,
+              game_versions:$game_versions,
+              loaders:$loaders,
+              featured:false,
+              file_parts:["file"],
+              primary_file:"file"
+            }')
+          echo "$DATA_JSON" | jq .
+          code=$(curl -sS -o mod_response.json -w "%{http_code}" \
+            -X POST "https://api.modrinth.com/v2/version" \
+            -H "Authorization: ${MODRINTH_TOKEN}" \
+            -H "User-Agent: $GITHUB_REPOSITORY CI" \
+            -F "data=${DATA_JSON};type=application/json" \
+            -F "file=@${FILE};type=application/java-archive;filename=$(basename "${FILE}")")
+          echo "HTTP $code"
+          cat mod_response.json | jq . || cat mod_response.json
+          test "$code" -ge 200 -a "$code" -lt 300
+
+      # 6) MAJ deploy.yml + suppression .changeset + push
+      - name: Commit bump & cleanup
+        if: ${{ success() }}
+        run: |
+          yq -i ".version.major=${{ steps.meta.outputs.major }} | .version.minor=${{ steps.meta.outputs.minor }} | .version.patch=${{ steps.meta.outputs.patch }}" deploy.yml
+          rm -rf .changeset
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add deploy.yaml
-          git add .changeset
-          git commit -m "chore: release v${{ steps.version.outputs.version }}"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deploy.yml
+          git add -A
+          git commit -m "chore(release): v${{ steps.meta.outputs.version }} [skip ci]" || echo "Rien à committer"
           git push
-          echo "✅ Changes committed and pushed"
-
-      - name: Summary
-        if: steps.changeset.outputs.found == 'true'
-        run: |
-          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version**: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Type**: ${{ steps.parse.outputs.version_type }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Game Versions**: ${{ steps.game_versions.outputs.csv }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Loaders**: ${{ steps.loaders.outputs.loaders_csv }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Package as Mod**: ${{ steps.config.outputs.package_as_mod }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Changelog" >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.parse.outputs.changelog }}" >> $GITHUB_STEP_SUMMARY
