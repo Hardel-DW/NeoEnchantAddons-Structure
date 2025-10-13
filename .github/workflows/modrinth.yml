@@ -418,6 +418,7 @@ jobs:
               version_type:$version_type,
               game_versions:($game_versions[0] | split(",")),
               loaders:$loaders,
+              dependencies:[],
               featured:false,
               file_parts:["file"],
               primary_file:"file"
@@ -458,6 +459,7 @@ jobs:
               version_type:$version_type,
               game_versions:($game_versions[0] | split(",")),
               loaders:($loaders[0] | split(",")),
+              dependencies:[],
               featured:false,
               file_parts:["file"],
               primary_file:"file"
