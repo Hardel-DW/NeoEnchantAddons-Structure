@@ -7,6 +7,7 @@ project:
 modrinth:
   enabled: true
   project_id: bHyNNNwZ
+  featured: false
 
 curseforge:
   datapack:
