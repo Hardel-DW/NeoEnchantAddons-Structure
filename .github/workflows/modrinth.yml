@@ -293,7 +293,7 @@ jobs:
         if: steps.changeset.outputs.found == 'true' && steps.config.outputs.modrinth_enabled == 'true'
         run: |
           FILENAME="${{ steps.config.outputs.package_as_mod_id }}-${{ steps.version.outputs.version }}.zip"
-          
+
           DATA=$(jq -n \
             --arg pid "${{ steps.config.outputs.modrinth_project_id }}" \
             --arg name "v${{ steps.version.outputs.version }} (Datapack)" \
@@ -301,7 +301,7 @@ jobs:
             --arg type "${{ steps.parse.outputs.version_type }}" \
             --arg log "${{ steps.parse.outputs.changelog }}" \
             --argjson gv '${{ steps.game_versions.outputs.json }}' \
-            --argjson loaders '${{ steps.loaders.outputs.json }}' \
+            --argjson loaders '["datapack"]' \
             --argjson featured ${{ steps.config.outputs.modrinth_featured || 'false' }} \
             '{name:$name, version_number:$ver, changelog:$log, game_versions:$gv, loaders:$loaders, project_id:$pid, version_type:$type, dependencies:[], featured:$featured, file_parts:["file"], primary_file:"file"}'
           )
@@ -320,7 +320,6 @@ jobs:
         if: steps.changeset.outputs.found == 'true' && steps.config.outputs.modrinth_enabled == 'true' && steps.config.outputs.package_as_mod_enabled == 'true'
         run: |
           FILENAME="${{ steps.config.outputs.package_as_mod_id }}-${{ steps.version.outputs.version }}.jar"
-          
           DATA=$(jq -n \
             --arg pid "${{ steps.config.outputs.modrinth_project_id }}" \
             --arg name "v${{ steps.version.outputs.version }} (Mod)" \
@@ -328,7 +327,7 @@ jobs:
             --arg type "${{ steps.parse.outputs.version_type }}" \
             --arg log "${{ steps.parse.outputs.changelog }}" \
             --argjson gv '${{ steps.game_versions.outputs.json }}' \
-            --argjson loaders '${{ steps.loaders.outputs.json }}' \
+            --argjson loaders '${{ steps.config.outputs.package_as_mod_loaders }}' \
             --argjson featured ${{ steps.config.outputs.modrinth_featured || 'false' }} \
             '{name:$name, version_number:$ver, changelog:$log, game_versions:$gv, loaders:$loaders, project_id:$pid, version_type:$type, dependencies:[], featured:$featured, file_parts:["file"], primary_file:"file"}'
           )
