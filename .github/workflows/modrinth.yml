@@ -170,7 +170,7 @@ jobs:
           
           print(f"✅ Version bumped: ${{ steps.config.outputs.current_version }} -> {new_version}")
           EOF
-
+          
       - name: Resolve loaders
         id: loaders
         if: steps.changeset.outputs.found == 'true'
@@ -183,18 +183,18 @@ jobs:
           default_loaders = '${{ steps.config.outputs.default_loaders }}'
           
           if changeset_loaders != 'null':
-              loaders = json.loads(changeset_loaders)
+              loaders = json.loads(changeset_loaders.replace("'", '"'))
           else:
-              loaders = json.loads(default_loaders)
+              loaders = json.loads(default_loaders.replace("'", '"'))
           
-          # Convertir en format comma-separated pour Modrinth
           loaders_csv = ','.join(loaders)
           
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write(f"loaders={loaders_csv}\n")
               f.write(f"loaders_json={json.dumps(loaders)}\n")
           
-          print(f"✅ Resolved loaders: {loaders}")
+          print(f"Resolved loaders: {loaders}")
+          print(f"Loaders CSV: {loaders_csv}")
           EOF
 
       - name: Format game versions
@@ -441,14 +441,6 @@ jobs:
           if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
             exit 1
           fi
-
-      - name: Debug loaders
-        if: steps.changeset.outputs.found == 'true' && steps.config.outputs.package_as_mod == 'true'
-        run: |
-          echo "Loaders CSV: '${{ steps.loaders.outputs.loaders_csv }}'"
-          echo "Loaders JSON: '${{ steps.loaders.outputs.loaders_json }}'"
-          echo "Parse loaders: '${{ steps.parse.outputs.loaders }}'"
-          echo "Default loaders: '${{ steps.config.outputs.default_loaders }}'"
 
       - name: Upload mod to Modrinth
         if: steps.changeset.outputs.found == 'true' && steps.config.outputs.package_as_mod == 'true'
