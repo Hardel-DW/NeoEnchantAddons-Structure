@@ -1,54 +1,59 @@
 project:
   version:
     major: 1
-    minor: 2
+    minor: 1
     patch: 0
+
 modrinth:
   enabled: true
   project_id: bHyNNNwZ
   featured: false
+
 curseforge:
   datapack:
     enabled: false
     project_id: null
+  
   mod:
     enabled: true
     project_id: 1300883
     java_versions:
-    - Java 21
-    - Java 22
+      - "Java 21"
+      - "Java 22"
     environments:
-    - server
+      - server
+
 package_as_mod:
   enabled: true
   loaders:
-  - fabric
-  - forge
-  - neoforge
-  - quilt
+    - fabric
+    - forge
+    - neoforge
+    - quilt
   id: mr_nneoenchant_addonsstructure
   name: NE+ Addons - Structure
   authors:
-  - Hardel
-  - VoxelTeam
+    - Hardel
+    - VoxelTeam
   homepage: https://modrinth.com/datapack/nneoenchant-addons-structure
   issues: https://github.com/Hardel-DW/NeoEnchantAddons-Structure/issues
   sources: https://github.com/Hardel-DW/NeoEnchantAddons-Structure
+
 build:
   exclude:
-  - .git
-  - .github
-  - .changeset
-  - .vscode
-  - .cursor
-  - node_modules
-  - README.md
-  - .gitignore
-  - deploy.yaml
-  - package.json
-  - package-lock.json
-  - tsconfig.json
-  - .editorconfig
-  - '*.log'
-  - '*.tmp'
-  - .DS_Store
+    - .git
+    - .github
+    - .changeset
+    - .vscode
+    - .cursor
+    - node_modules
+    - README.md
+    - .gitignore
+    - deploy.yaml
+    - package.json
+    - package-lock.json
+    - tsconfig.json
+    - .editorconfig
+    - '*.log'
+    - '*.tmp'
+    - .DS_Store
