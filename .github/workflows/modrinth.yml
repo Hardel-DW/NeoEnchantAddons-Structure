@@ -230,8 +230,6 @@ jobs:
           from fnmatch import fnmatch
           
           exclude_patterns = json.loads('${{ steps.config.outputs.exclude_patterns }}')
-          
-          # IMPORTANT: Toujours exclure les dossiers de build pour éviter la récursion infinie
           exclude_patterns.extend(['build-temp', 'dist'])
           
           def should_exclude(path, exclude_patterns):
@@ -416,7 +414,7 @@ jobs:
           
           changelog: ${{ steps.parse.outputs.changelog }}
           
-          loaders: ${{ steps.loaders.outputs.loaders_csv }}
+          loaders: datapack
           game-versions: ${{ steps.game_versions.outputs.csv }}
 
       - name: Upload mod to Modrinth
