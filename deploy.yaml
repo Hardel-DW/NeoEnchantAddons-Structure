@@ -1,43 +1,39 @@
 modrinth:
   package_as_mod: true
-  project_id: "bHyNNNwZ"
+  project_id: bHyNNNwZ
   loaders:
-    - fabric
-    - forge
-    - neoforge
-    - quilt
-    
+  - fabric
+  - forge
+  - neoforge
+  - quilt
 mod:
-  id: "mr_nneoenchant_addonsstructure"
-  name: "NE+ Addons - Structure"
+  id: mr_nneoenchant_addonsstructure
+  name: NE+ Addons - Structure
   authors:
-    - "Hardel"
-    - "VoxelTeam"
-  
-  homepage: "https://modrinth.com/datapack/nneoenchant-addons-structure"
-  issues: "https://github.com/Hardel-DW/NeoEnchantAddons-Structure/issues"
-  sources: "https://github.com/Hardel-DW/NeoEnchantAddons-Structure"
-
+  - Hardel
+  - VoxelTeam
+  homepage: https://modrinth.com/datapack/nneoenchant-addons-structure
+  issues: https://github.com/Hardel-DW/NeoEnchantAddons-Structure/issues
+  sources: https://github.com/Hardel-DW/NeoEnchantAddons-Structure
 version:
   major: 1
-  minor: 0
+  minor: 1
   patch: 0
-  
 build:
   exclude:
-    - ".git"
-    - ".github"
-    - ".changeset"
-    - ".vscode"
-    - ".cursor"
-    - "node_modules"
-    - "README.md"
-    - ".gitignore"
-    - "deploy.yaml"
-    - "package.json"
-    - "package-lock.json"
-    - "tsconfig.json"
-    - ".editorconfig"
-    - "*.log"
-    - "*.tmp"
-    - ".DS_Store"
+  - .git
+  - .github
+  - .changeset
+  - .vscode
+  - .cursor
+  - node_modules
+  - README.md
+  - .gitignore
+  - deploy.yaml
+  - package.json
+  - package-lock.json
+  - tsconfig.json
+  - .editorconfig
+  - '*.log'
+  - '*.tmp'
+  - .DS_Store
