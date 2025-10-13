@@ -7,4 +7,4 @@ version_bump: minor
 ---
 
 ## Changelog de la version
-- Test CI/CD from Github 4
+- Test CI/CD from Github 5
