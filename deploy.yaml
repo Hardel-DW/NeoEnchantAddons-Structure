@@ -1,5 +1,9 @@
 project:
   type: datapack
+  version:
+    major: 1
+    minor: 1
+    patch: 0
   loaders:
     - fabric
     - forge
@@ -34,11 +38,6 @@ package_as_mod:
   homepage: https://modrinth.com/datapack/nneoenchant-addons-structure
   issues: https://github.com/Hardel-DW/NeoEnchantAddons-Structure/issues
   sources: https://github.com/Hardel-DW/NeoEnchantAddons-Structure
-
-version:
-  major: 1
-  minor: 1
-  patch: 0
 
 build:
   exclude:
