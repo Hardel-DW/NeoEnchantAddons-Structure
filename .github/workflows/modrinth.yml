@@ -303,7 +303,7 @@ jobs:
             --argjson gv '${{ steps.game_versions.outputs.json }}' \
             --argjson loaders '${{ steps.loaders.outputs.json }}' \
             --argjson featured ${{ steps.config.outputs.modrinth_featured || 'false' }} \
-            '{name:$name, version_number:$ver, changelog:$log, game_versions:$gv, loaders:$loaders, project_id:$pid, version_type:$type, featured:$featured, file_parts:["file"], primary_file:"file"}'
+            '{name:$name, version_number:$ver, changelog:$log, game_versions:$gv, loaders:$loaders, project_id:$pid, version_type:$type, dependencies:[], featured:$featured, file_parts:["file"], primary_file:"file"}'
           )
           
           curl -sS -o resp.json -w "%{http_code}" \
@@ -330,7 +330,7 @@ jobs:
             --argjson gv '${{ steps.game_versions.outputs.json }}' \
             --argjson loaders '${{ steps.loaders.outputs.json }}' \
             --argjson featured ${{ steps.config.outputs.modrinth_featured || 'false' }} \
-            '{name:$name, version_number:$ver, changelog:$log, game_versions:$gv, loaders:$loaders, project_id:$pid, version_type:$type, featured:$featured, file_parts:["file"], primary_file:"file"}'
+            '{name:$name, version_number:$ver, changelog:$log, game_versions:$gv, loaders:$loaders, project_id:$pid, version_type:$type, dependencies:[], featured:$featured, file_parts:["file"], primary_file:"file"}'
           )
             
           curl -sS -o resp.json -w "%{http_code}" \
