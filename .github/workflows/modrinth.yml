@@ -300,9 +300,11 @@ jobs:
             --arg ver "${{ steps.version.outputs.version }}" \
             --arg type "${{ steps.parse.outputs.version_type }}" \
             --arg log "${{ steps.parse.outputs.changelog }}" \
-            --arg gv "${{ steps.game_versions.outputs.csv }}" \
+            --argjson gv '${{ steps.game_versions.outputs.json }}' \
+            --argjson loaders '${{ steps.loaders.outputs.json }}' \
             --argjson featured ${{ steps.config.outputs.modrinth_featured || 'false' }} \
-            '{name:$name, version_number:$number, changelog:$changelog, game_versions:$gv, loaders:$loaders, project_id:$project, version_type:$type, featured:$featured, file_parts:["file"], primary_file:"file"}'
+            '{name:$name, version_number:$ver, changelog:$log, game_versions:$gv, loaders:$loaders, project_id:$pid, version_type:$type, featured:$featured, file_parts:["file"], primary_file:"file"}'
+          )
           
           curl -sS -o resp.json -w "%{http_code}" \
             -X POST "https://api.modrinth.com/v2/version" \
@@ -325,10 +327,11 @@ jobs:
             --arg ver "${{ steps.version.outputs.version }}" \
             --arg type "${{ steps.parse.outputs.version_type }}" \
             --arg log "${{ steps.parse.outputs.changelog }}" \
-            --arg gv "${{ steps.game_versions.outputs.csv }}" \
-            --arg ld "${{ steps.loaders.outputs.csv }}" \
+            --argjson gv '${{ steps.game_versions.outputs.json }}' \
+            --argjson loaders '${{ steps.loaders.outputs.json }}' \
             --argjson featured ${{ steps.config.outputs.modrinth_featured || 'false' }} \
-            '{name:$name, version_number:$number, changelog:$changelog, game_versions:$gv, loaders:$loaders, project_id:$project, version_type:$type, featured:$featured, file_parts:["file"], primary_file:"file"}'
+            '{name:$name, version_number:$ver, changelog:$log, game_versions:$gv, loaders:$loaders, project_id:$pid, version_type:$type, featured:$featured, file_parts:["file"], primary_file:"file"}'
+          )
             
           curl -sS -o resp.json -w "%{http_code}" \
             -X POST "https://api.modrinth.com/v2/version" \
