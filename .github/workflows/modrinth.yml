@@ -78,9 +78,7 @@ jobs:
               config = yaml.safe_load(f)
           
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f"version_major={config['project']['version']['major']}\n")
-              f.write(f"version_minor={config['project']['version']['minor']}\n")
-              f.write(f"version_patch={config['project']['version']['patch']}\n")
+              f.write(f"current_version={config['project']['version']}\n")
               f.write(f"modrinth_enabled={str(config['modrinth']['enabled']).lower()}\n")
               f.write(f"modrinth_project_id={config['modrinth']['project_id']}\n")
               f.write(f"modrinth_featured={str(config['modrinth'].get('featured', False)).lower()}\n")
