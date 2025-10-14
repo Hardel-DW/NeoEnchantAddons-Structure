@@ -240,45 +240,88 @@ jobs:
         id: cf_versions
         if: steps.changeset.outputs.found == 'true' && (steps.config.outputs.curseforge_datapack_enabled == 'true' || steps.config.outputs.curseforge_mod_enabled == 'true')
         run: |
-          curl -fsSL -D headers.txt "https://minecraft.curseforge.com/api/game/versions" \
+          curl -fsSL "https://minecraft.curseforge.com/api/game/version-types" \
+            -H "Accept: application/json" \
+            -H "X-Api-Token: ${{ secrets.CURSEFORGE_TOKEN }}" \
+            -o cf_version_types.json
+          
+          curl -fsSL "https://minecraft.curseforge.com/api/game/versions" \
             -H "Accept: application/json" \
             -H "X-Api-Token: ${{ secrets.CURSEFORGE_TOKEN }}" \
             -o cf_versions.json
 
-          if ! jq -e 'type=="array" and (.[0]? | has("id") and has("name"))' cf_versions.json > /dev/null; then
-            echo "Unexpected response from CurseForge. First 200 chars below:"
-            head -c 200 cf_versions.json || true
-            echo; echo "Response headers:"
-            cat headers.txt || true
-            exit 1
-          fi
-
           python - <<'EOF'
           import json, os
+          
+          with open('cf_version_types.json','r') as f:
+              version_types = json.load(f)
+          
           with open('cf_versions.json','r') as f:
               versions = json.load(f)
+          
+          type_by_slug = {vt['slug']: vt['id'] for vt in version_types}
+          
+          minecraft_types = [
+              tid for slug, tid in type_by_slug.items() 
+              if slug.startswith('minecraft-') and 'beta' not in slug.lower()
+          ]
+          
+          modloader_type = type_by_slug.get('modloader')
+          environment_type = type_by_slug.get('environment')
+          java_type = type_by_slug.get('java')
+          
+          print(f"Minecraft types: {minecraft_types}")
+          print(f"Modloader type: {modloader_type}")
+          print(f"Environment type: {environment_type}")
+          print(f"Java type: {java_type}")
           
           game_versions = json.loads('${{ steps.game_versions.outputs.json }}')
           loaders       = json.loads('${{ steps.loaders.outputs.json }}')
           java_versions = json.loads('${{ steps.config.outputs.curseforge_java_versions }}')
           environments  = json.loads('${{ steps.config.outputs.curseforge_environments }}')
           
-          loader_names = [l.capitalize() for l in loaders]
-          env_names    = [e.capitalize() for e in environments]
+          by_type = {}
+          for v in versions:
+              type_id = v.get('gameVersionTypeID')
+              name = v.get('name')
+              if type_id and name:
+                  if type_id not in by_type:
+                      by_type[type_id] = {}
+                  by_type[type_id][name] = v['id']
           
           ids = []
-          by_name = {v['name']: v['id'] for v in versions if isinstance(v, dict) and 'name' in v and 'id' in v}
           
-          for name in game_versions: 
-              if name in by_name: ids.append(by_name[name])
-          for name in loader_names:
-              if name in by_name: ids.append(by_name[name])
-          for name in java_versions:
-              if name in by_name: ids.append(by_name[name])
-          for name in env_names:
-              if name in by_name: ids.append(by_name[name])
+          for version in game_versions:
+              found = False
+              for type_id in minecraft_types:
+                  if type_id in by_type and version in by_type[type_id]:
+                      ids.append(by_type[type_id][version])
+                      print(f"✓ Minecraft {version} -> ID {by_type[type_id][version]} (type {type_id})")
+                      found = True
+                      break
+              if not found:
+                  print(f"✗ Minecraft version NOT FOUND: {version}")
+          
+          if modloader_type:
+              for loader in [l.capitalize() for l in loaders]:
+                  if modloader_type in by_type and loader in by_type[modloader_type]:
+                      ids.append(by_type[modloader_type][loader])
+                      print(f"✓ Loader {loader} -> ID {by_type[modloader_type][loader]}")
+          
+          if java_type:
+              for java in java_versions:
+                  if java_type in by_type and java in by_type[java_type]:
+                      ids.append(by_type[java_type][java])
+                      print(f"✓ Java {java} -> ID {by_type[java_type][java]}")
+          
+          if environment_type:
+              for env in [e.capitalize() for e in environments]:
+                  if environment_type in by_type and env in by_type[environment_type]:
+                      ids.append(by_type[environment_type][env])
+                      print(f"✓ Environment {env} -> ID {by_type[environment_type][env]}")
           
           ids = list(dict.fromkeys(ids))
+          print(f"\n✅ Final IDs to send: {ids}")
           
           with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
               out.write(f"ids={json.dumps(ids)}\n")
