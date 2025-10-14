@@ -79,6 +79,7 @@ jobs:
           
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write(f"current_version={config['project']['version']}\n")
+              f.write(f"project_name={config['project']['name']}\n")
               f.write(f"modrinth_enabled={str(config['modrinth']['enabled']).lower()}\n")
               f.write(f"modrinth_project_id={config['modrinth']['project_id']}\n")
               f.write(f"modrinth_featured={str(config['modrinth'].get('featured', False)).lower()}\n")
@@ -91,7 +92,6 @@ jobs:
               f.write(f"package_as_mod_enabled={str(config['package_as_mod']['enabled']).lower()}\n")
               f.write(f"package_as_mod_loaders={json.dumps(config['package_as_mod']['loaders'])}\n")
               f.write(f"package_as_mod_id={config['package_as_mod']['id']}\n")
-              f.write(f"package_as_mod_name={config['package_as_mod'].get('name', '')}\n")
               f.write(f"package_as_mod_authors={json.dumps(config['package_as_mod']['authors'])}\n")
               f.write(f"exclude_patterns={json.dumps(config.get('build', {}).get('exclude', []))}\n")
           EOF
@@ -223,8 +223,7 @@ jobs:
           await writeFile(args.output, Buffer.from(await response.arrayBuffer()));
           SCRIPT
           
-          MOD_NAME="${{ steps.config.outputs.package_as_mod_name }}"
-          [ -z "$MOD_NAME" ] && MOD_NAME="${{ github.event.repository.name }}"
+          MOD_NAME="${{ steps.config.outputs.project_name }}"
           
           node convert.js "$(jq -n \
             --arg input "dist/${{ steps.config.outputs.package_as_mod_id }}-${{ steps.version.outputs.version }}.zip" \
@@ -386,7 +385,7 @@ jobs:
           FILENAME="${{ steps.config.outputs.package_as_mod_id }}-${{ steps.version.outputs.version }}.zip"
           
           DATA=$(jq -n \
-            --arg name "v${{ steps.version.outputs.version }}" \
+            --arg name "${{ steps.config.outputs.project_name }} - v${{ steps.version.outputs.version }}" \
             --arg log "${{ steps.parse.outputs.changelog }}" \
             --arg type "${{ steps.parse.outputs.version_type }}" \
             --argjson ids '${{ steps.cf_versions.outputs.game_ids }}' \
@@ -408,7 +407,7 @@ jobs:
           FILENAME="${{ steps.config.outputs.package_as_mod_id }}-${{ steps.version.outputs.version }}.jar"
           
           DATA=$(jq -n \
-            --arg name "v${{ steps.version.outputs.version }}" \
+            --arg name "${{ steps.config.outputs.project_name }} - v${{ steps.version.outputs.version }}" \
             --arg log "${{ steps.parse.outputs.changelog }}" \
             --arg type "${{ steps.parse.outputs.version_type }}" \
             --argjson ids '${{ steps.cf_versions.outputs.ids }}' \
