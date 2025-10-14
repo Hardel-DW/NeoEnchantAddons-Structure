@@ -1,5 +1,6 @@
 project:
   version: "1.1.1"
+  name: NE+ Addons - Structure
 
 modrinth:
   enabled: true
@@ -28,7 +29,6 @@ package_as_mod:
     - neoforge
     - quilt
   id: mr_nneoenchant_addonsstructure
-  name: NE+ Addons - Structure
   authors:
     - Hardel
     - VoxelTeam
