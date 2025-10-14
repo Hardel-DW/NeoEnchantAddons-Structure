@@ -80,6 +80,7 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write(f"current_version={config['project']['version']}\n")
               f.write(f"project_name={config['project']['name']}\n")
+              f.write(f"project_filename={config['project']['filename']}\n")
               f.write(f"modrinth_enabled={str(config['modrinth']['enabled']).lower()}\n")
               f.write(f"modrinth_project_id={config['modrinth']['project_id']}\n")
               f.write(f"modrinth_featured={str(config['modrinth'].get('featured', False)).lower()}\n")
@@ -92,6 +93,7 @@ jobs:
               f.write(f"package_as_mod_enabled={str(config['package_as_mod']['enabled']).lower()}\n")
               f.write(f"package_as_mod_loaders={json.dumps(config['package_as_mod']['loaders'])}\n")
               f.write(f"package_as_mod_id={config['package_as_mod']['id']}\n")
+              f.write(f"package_as_mod_filename={config['package_as_mod'].get('filename', config['package_as_mod']['id'])}\n")
               f.write(f"package_as_mod_authors={json.dumps(config['package_as_mod']['authors'])}\n")
               f.write(f"exclude_patterns={json.dumps(config.get('build', {}).get('exclude', []))}\n")
           EOF
@@ -329,7 +331,7 @@ jobs:
       - name: Upload to Modrinth (Datapack)
         if: steps.changeset.outputs.found == 'true' && steps.config.outputs.modrinth_enabled == 'true'
         run: |
-          FILENAME="${{ steps.config.outputs.package_as_mod_id }}-${{ steps.version.outputs.version }}.zip"
+          FILENAME="${{ steps.config.outputs.project_filename }}-${{ steps.version.outputs.version }}.zip"
 
           DATA=$(jq -n \
             --arg pid "${{ steps.config.outputs.modrinth_project_id }}" \
@@ -356,7 +358,7 @@ jobs:
       - name: Upload to Modrinth (Mod)
         if: steps.changeset.outputs.found == 'true' && steps.config.outputs.modrinth_enabled == 'true' && steps.config.outputs.package_as_mod_enabled == 'true'
         run: |
-          FILENAME="${{ steps.config.outputs.package_as_mod_id }}-${{ steps.version.outputs.version }}.jar"
+          FILENAME="${{ steps.config.outputs.package_as_mod_filename }}-${{ steps.version.outputs.version }}.jar"
           DATA=$(jq -n \
             --arg pid "${{ steps.config.outputs.modrinth_project_id }}" \
             --arg name "v${{ steps.version.outputs.version }} (Mod)" \
@@ -382,7 +384,7 @@ jobs:
       - name: Upload to CurseForge (Datapack)
         if: steps.changeset.outputs.found == 'true' && steps.config.outputs.curseforge_datapack_enabled == 'true'
         run: |
-          FILENAME="${{ steps.config.outputs.package_as_mod_id }}-${{ steps.version.outputs.version }}.zip"
+          FILENAME="${{ steps.config.outputs.project_filename }}-${{ steps.version.outputs.version }}.zip"
           
           DATA=$(jq -n \
             --arg name "${{ steps.config.outputs.project_name }} - v${{ steps.version.outputs.version }}" \
@@ -404,7 +406,7 @@ jobs:
       - name: Upload to CurseForge (Mod)
         if: steps.changeset.outputs.found == 'true' && steps.config.outputs.curseforge_mod_enabled == 'true'
         run: |
-          FILENAME="${{ steps.config.outputs.package_as_mod_id }}-${{ steps.version.outputs.version }}.jar"
+          FILENAME="${{ steps.config.outputs.package_as_mod_filename }}-${{ steps.version.outputs.version }}.jar"
           
           DATA=$(jq -n \
             --arg name "${{ steps.config.outputs.project_name }} - v${{ steps.version.outputs.version }}" \
