@@ -29,6 +29,7 @@ package_as_mod:
     - neoforge
     - quilt
   id: mr_nneoenchant_addonsstructure
+  filename: neoenchant_addons-structure
   authors:
     - Hardel
     - VoxelTeam
