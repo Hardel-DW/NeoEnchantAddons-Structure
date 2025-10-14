@@ -360,7 +360,7 @@ jobs:
           DATA=$(jq -n \
             --arg pid "${{ steps.config.outputs.modrinth_project_id }}" \
             --arg name "v${{ steps.version.outputs.version }} (Mod)" \
-            --arg ver "${{ steps.version.outputs.version }}" \
+            --arg ver "${{ steps.version.outputs.version }}+mod" \
             --arg type "${{ steps.parse.outputs.version_type }}" \
             --arg log "${{ steps.parse.outputs.changelog }}" \
             --argjson gv '${{ steps.game_versions.outputs.json }}' \
