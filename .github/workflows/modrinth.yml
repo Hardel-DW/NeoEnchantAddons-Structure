@@ -256,19 +256,19 @@ jobs:
           python - <<'EOF'
           import json, os
           with open('cf_versions.json','r') as f:
-              versions = json.load(f)  # <-- ici c'est bien une liste d'objets
-          # inputs précédents
-          game_versions = json.loads(os.environ.get('GAME_VERSIONS_JSON','[]'))  # ex. ["1.21.1"]
-          loaders       = json.loads(os.environ.get('LOADERS_JSON','[]'))        # ex. ["fabric","neoforge"]
+              versions = json.load(f)
+          
+          game_versions = json.loads('${{ steps.game_versions.outputs.json }}')
+          loaders       = json.loads('${{ steps.loaders.outputs.json }}')
           java_versions = json.loads('${{ steps.config.outputs.curseforge_java_versions }}')
           environments  = json.loads('${{ steps.config.outputs.curseforge_environments }}')
-
-          # Normalisation pour matcher les 'name' côté CF
+          
           loader_names = [l.capitalize() for l in loaders]
-          env_names    = [e.capitalize() for e in environments]  # "server" -> "Server"
-
+          env_names    = [e.capitalize() for e in environments]
+          
           ids = []
           by_name = {v['name']: v['id'] for v in versions if isinstance(v, dict) and 'name' in v and 'id' in v}
+          
           for name in game_versions: 
               if name in by_name: ids.append(by_name[name])
           for name in loader_names:
@@ -277,10 +277,9 @@ jobs:
               if name in by_name: ids.append(by_name[name])
           for name in env_names:
               if name in by_name: ids.append(by_name[name])
-
-          # Dédup
+          
           ids = list(dict.fromkeys(ids))
-
+          
           with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
               out.write(f"ids={json.dumps(ids)}\n")
           EOF
