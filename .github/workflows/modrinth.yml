@@ -106,9 +106,8 @@ jobs:
           import os
           
           bump = "${{ steps.parse.outputs.version_bump }}"
-          major = int("${{ steps.config.outputs.version_major }}")
-          minor = int("${{ steps.config.outputs.version_minor }}")
-          patch = int("${{ steps.config.outputs.version_patch }}")
+          current = "${{ steps.config.outputs.current_version }}"
+          major, minor, patch = map(int, current.split('.'))
           
           if bump == "major":
               major += 1
@@ -120,11 +119,10 @@ jobs:
           elif bump == "patch":
               patch += 1
           
+          new_version = f"{major}.{minor}.{patch}"
+          
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f"version={major}.{minor}.{patch}\n")
-              f.write(f"major={major}\n")
-              f.write(f"minor={minor}\n")
-              f.write(f"patch={patch}\n")
+              f.write(f"version={new_version}\n")
           EOF
 
       - name: Resolve loaders
@@ -395,20 +393,9 @@ jobs:
           with open('deploy.yaml', 'r') as f:
               content = f.read()
           
-          # Remplacer les valeurs en préservant l'espacement exact
           content = re.sub(
-              r'(major:\s*)\d+',
-              r'\g<1>${{ steps.version.outputs.major }}',
-              content
-          )
-          content = re.sub(
-              r'(minor:\s*)\d+',
-              r'\g<1>${{ steps.version.outputs.minor }}',
-              content
-          )
-          content = re.sub(
-              r'(patch:\s*)\d+',
-              r'\g<1>${{ steps.version.outputs.patch }}',
+              r'(version:\s*["\']?)[0-9.]+(["\']?)',
+              r'\g<1>${{ steps.version.outputs.version }}\g<2>',
               content
           )
           
