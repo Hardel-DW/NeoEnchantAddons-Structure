@@ -195,7 +195,7 @@ jobs:
         if: steps.changeset.outputs.found == 'true'
         run: |
           cd build-temp
-          FILENAME="${{ steps.config.outputs.package_as_mod_id }}-${{ steps.version.outputs.version }}.zip"
+          FILENAME="${{ steps.config.outputs.project_filename }}-${{ steps.version.outputs.version }}.zip"
           zip -r ../dist/${FILENAME} . -x "*.git*" "*.DS_Store"
           cd ..
           [ -f "dist/${FILENAME}" ] || exit 1
@@ -228,8 +228,8 @@ jobs:
           MOD_NAME="${{ steps.config.outputs.project_name }}"
           
           node convert.js "$(jq -n \
-            --arg input "dist/${{ steps.config.outputs.package_as_mod_id }}-${{ steps.version.outputs.version }}.zip" \
-            --arg output "dist/${{ steps.config.outputs.package_as_mod_id }}-${{ steps.version.outputs.version }}.jar" \
+            --arg input "dist/${{ steps.config.outputs.project_filename }}-${{ steps.version.outputs.version }}.zip" \
+            --arg output "dist/${{ steps.config.outputs.package_as_mod_filename }}-${{ steps.version.outputs.version }}.jar" \
             --arg id "${{ steps.config.outputs.package_as_mod_id }}" \
             --arg version "${{ steps.version.outputs.version }}" \
             --arg name "$MOD_NAME" \
