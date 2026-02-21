@@ -1,5 +1,5 @@
 project:
-  version: 1.0.2
+  version: 1.1.0
   name: NE+ Addons - Structure
   filename: neoenchant-addons-structure
 modrinth:
@@ -14,7 +14,7 @@ curseforge:
     enabled: true
     project_id: 1300883
     java_versions:
-      - Java 21
+      - Java 17
     environments:
       - server
 package_as_mod:
